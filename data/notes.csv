@@ -1,0 +1,115 @@
+QID,timestamp,note
+1446,2026-04-03 20:28:49.738526,Auto Loader resumes ingestion using checkpointing and the Write‑Ahead Log (WAL) to ensure exactly‑once processing after failures.
+1496,2026-04-04 11:35:15.105938,"Layer 1: SQL (what you do): UPDATE, INSERT, DELETE |
+Layer 2: Unity Catalog: (what you are allowed to do): MODIFY  |
+ON -> TO"
+1357,2026-04-04 11:51:49.565236,"To find rows in one table that don’t exist in another, use EXCEPT. INTERSECT and INNER JOIN find matches; UNION returns everything."
+1457,2026-04-06 11:36:35.888980,"Auto Loader needs Hints, not Hopes."
+1578,2026-04-06 14:29:48.645071,Average per customer → group by customer - Read and understand the question before answering!
+1601,2026-04-08 11:30:34.536716,"DLT = Two switches
+
+1) Triggered vs Continuous
+   → How often does it run?
+
+   Triggered   → Runs once | Continuous → Runs continuously
+
+
+2) Development vs Production
+   → What happens to compute when stopped?
+
+   Development → Compute persists | Production  → Compute terminates"
+1281,2026-04-08 12:16:27.346414,"Databricks SQL Warehouse performance issues:
+
+• Slow single query → increase cluster SIZE (vertical)
+• Slow during high concurrency → increase MAX CLUSTERS (horizontal)
+• Queries waiting → check Peak Queued Queries"
+1318,2026-04-08 12:20:22.500328,"Cost when idle  → Auto Stop ✅
+Too many users → Max clusters
+Slow queries   → Cluster size
+Convenience    → Serverless"
+1716,2026-04-08 12:23:02.033638,"Catalog → Schema → Table
+
+Unity Catalog SELECT fails?
+
+Check:
+1) USE CATALOG ✅
+2) USE SCHEMA ✅
+3) SELECT ✅"
+1747,2026-04-08 12:25:08.987164,"If it looks like a table, acts like a query, and stores no data → it’s a VIEW"
+1304,2026-04-08 12:55:39.282615,"After from_json, it's a STRUCT — use dot, not colon.
+
+Is it a STRUCT?
+→ use .
+
+Is it an ARRAY?
+→ flatten / explode
+
+Need a total?
+→ aggregate or reduce"
+1627,2026-04-08 12:58:15.011360,"Triggered + Dev
+→ run once
+→ stop
+→ compute persists"
+1688,2026-04-08 13:00:46.458974,"Slow ONE query?
+→ Increase SQL warehouse SIZE
+
+Slow MANY users?
+→ Increase MAX CLUSTERS"
+1218,2026-04-08 13:03:31.495388,"“All available data, then stop” = availableNow"
+1412,2026-04-08 13:06:34.913005,"If you GROUP BY, every other column must use collect_ or an aggregate.*"
+1684,2026-04-08 13:12:16.993879,"Instant elimination table (exam speed)
+
+Use case                         → Correct compute
+-----------------------------------------------
+Ad-hoc SQL & dashboards          → SQL Warehouse
+Scheduled jobs                  → Jobs Compute
+Notebook exploration             → All-purpose cluster
+Delta Live Tables pipelines      → DLT cluster"
+1528,2026-04-08 13:16:13.322150,"DLT Pipeline Behavior Matrix (Exam Hook)
+
+Triggered + Development
+→ Runs ONCE, then stops | Compute PERSISTS
+
+Triggered + Production
+→ Runs ONCE, then stops | Compute TERMINATES
+
+Continuous + Development
+→ Runs CONTINUOUSLY until stopped | Compute PERSISTS
+
+Continuous + Production
+→ Runs CONTINUOUSLY until stopped | Compute TERMINATES"
+1653,2026-04-08 16:25:15.066211,"USE CATALOG on main
+USE SCHEMA on main.sales_schema
+CREATE TABLE on main.sales_schema
+
+No USE CATALOG → no schema access → no table creation"
+1414,2026-04-08 16:30:03.565278,"Databricks cost tracking = TAGS, not workspaces or spreadsheets"
+1494,2026-04-08 18:33:03.535325,Seems like the explanation is wrong. Please verify
+1738,2026-04-10 18:53:23.355416,"Notebook only → Temp view
+Same cluster → Global temp view
+Persisted & optimized → Materialized view
+Storage‑backed → Tables"
+1723,2026-04-10 19:08:51.527305,Transform values to change prices; transform keys to change names; map_filter removes stuff; explode makes rows.
+1438,2026-04-11 15:34:32.973336,COPY INTO is idempotent — it skips files that were already loaded.
+1740,2026-04-13 11:15:05.520762,Read the DAMN questions slowly and understand before ANSWERING!
+1756,2026-04-13 11:17:04.571420,Nth weekday = cron
+1280,2026-04-14 14:39:07.274568,"I confused Spark endpoint configuration with SQL Warehouse configuration. For Databricks SQL Dashboards, the correct place to change timezone is the SQL Admin Console, not Spark configs or query-level SET TIMEZONE. Remember: dashboards → SQL warehouse settings."
+1542,2026-04-15 09:34:02.760983,"Z‑Order = rewrite again
+Liquid Clustering = adjust over time"
+1277,2026-04-15 09:36:59.202661,If they want the number → Custom template
+1621,2026-04-17 17:38:33.979801,"The question wants the basics — sum, max, count — grouped by Store. Option B does exactly that, nothing fancy.
+D is the ""distracted"" option — it looks right (groups by Store) but gets distracted and wanders off into avg and countDistinct, which nobody asked for.
+So when you see an aggregation question: check the group-by column first, then verify every aggregation matches exactly what's asked. D fails the second check."
+1253,2026-04-24 20:15:03.268307,"%sql
+-- Working equivalent of what the exam CLAIMS Option D does:
+-- Step 1: COLLECT_LIST(items) → [[1,100,200,300], [1,250,300]]
+-- Step 2: AGGREGATE folds ARRAY_UNION across the collected arrays
+-- Step 3: Result: [1, 100, 200, 300, 250]
+SELECT cartId, 
+  AGGREGATE(
+    COLLECT_LIST(items), 
+    CAST(ARRAY() AS ARRAY<INT>), 
+    (acc, x) -> ARRAY_UNION(acc, x)
+  ) AS items
+FROM carts
+GROUP BY cartId"

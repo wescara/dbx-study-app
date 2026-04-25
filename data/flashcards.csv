@@ -1,0 +1,76 @@
+QID,timestamp,front,back
+1218,2026-04-10 18:32:39.744189,Trigger to process all available data in multiple batches?,E: trigger(availableNow=True)
+0,2026-04-10 19:00:00.000000,Slow ONE query on SQL warehouse?,Increase SQL warehouse SIZE (scale up)
+0,2026-04-10 19:00:01.000000,Slow MANY users on SQL warehouse?,Increase MAX CLUSTERS (scale out)
+1423,2026-04-10 18:49:35.354625,"A column geo is defined as struct<city, state, country>. How do you filter rows where country = 'India'?",A: SELECT geo.country FROM events WHERE geo.country = 'India'
+0,2026-04-10 19:10:00.000000,When should you use an EXTERNAL table in Databricks?,When data already exists in cloud storage and you want the table definition without Databricks managing the data lifecycle. (External = data lives outside Databricks)
+0,2026-04-10 19:10:01.000000,When should you use a MANAGED table in Databricks?,Databricks manages both the table metadata AND the underlying data files. (Managed = Databricks owns the data)
+0,2026-04-10 19:10:02.000000,What is a MATERIALIZED VIEW used for in Databricks?,"Stores precomputed query results backed by storage and metastore metadata for reuse/performance. (Materialized = stored results, not temporary. If 'do not write to storage' -> NOT a materialized view)"
+0,2026-04-10 19:10:03.000000,What is the scope of a TEMPORARY VIEW in Databricks?,Session-scoped -- only available within the current notebook. (Temp view = one notebook only)
+0,2026-04-10 19:10:04.000000,"Share a dataset across multiple notebooks on the same cluster, without writing to storage or registering a table?","Create a GLOBAL temporary view. (Same cluster, many notebooks -> GLOBAL temp view)"
+0,2026-04-10 19:20:00.000000,"When aggregating nested arrays in Spark SQL, what is the safe order to get unique primitive values?","Collect -> Flatten -> Distinct. collect_set() first (gathers arrays across rows), flatten() second (array-of-arrays -> one array), array_distinct() last (dedupes the values)"
+0,2026-04-10 19:30:00.000000,What does FETCH() do in Spark SQL?,FETCH() is NOT a valid higher-order function in Spark SQL. Always wrong on the exam. (If it FETCHes -- it fails.)
+0,2026-04-10 19:30:01.000000,What does TRANSFORM() do on an array?,"Maps each element to a new value and returns an array of the same size. e.g. TRANSFORM(arr, e -> e.salary * 1.1). If the lambda returns boolean you get true/false array -- NOT filtered data. (Transform changes values, not rows.)"
+0,2026-04-10 19:30:02.000000,What does EXISTS() return when used on an array?,"A single boolean -- true if at least one element matches the condition. Cannot return filtered elements. e.g. exists(arr, e -> e.salary > 500000). (Exists answers YES/NO.)"
+0,2026-04-10 19:30:03.000000,When should REDUCE() be used in Spark SQL?,"Aggregates an array into a single value using an accumulator (sum/min/max). e.g. REDUCE(arr, 0, (acc, e) -> acc + e.salary). It collapses -- never filters. (Reduce collapses -- it never filters.)"
+0,2026-04-10 19:30:04.000000,Which Spark SQL function returns only array elements matching a condition?,"FILTER() -- keeps elements that satisfy the predicate. e.g. FILTER(arr, e -> e.salary > 500000). (FILTER keeps what matches.)"
+0,2026-04-10 19:30:05.000000,Higher-order array functions: which does what?,TRANSFORM -> changes values | FILTER -> removes elements | EXISTS -> returns boolean | REDUCE -> returns single value. Need a subset? Always FILTER().
+1639,2026-04-10 19:10:45.379107,"Auto Loader ingests JSON files, but all columns are STRING. What's the most likely reason?",A: The cloudFiles.inferColumnTypes option is not set to true.
+0,2026-04-10 19:40:00.000000,Which Databricks bundle command creates a new project from a template?,databricks bundle init -- Generates project structure and databricks.yml from a template. (init = start)
+0,2026-04-10 19:40:01.000000,Which command checks whether a Databricks bundle is correctly configured before deployment?,databricks bundle validate -- Verifies config files and resource definitions to ensure the bundle is deployable. (validate = sanity check)
+0,2026-04-10 19:40:02.000000,Which Databricks bundle command generates config from existing workspace resources?,"databricks bundle generate -- Creates bundle YAML from existing jobs, pipelines, dashboards, or apps. (generate = reverse-engineer)"
+0,2026-04-10 19:40:03.000000,Which command publishes a Databricks bundle to a target workspace?,"databricks bundle deploy -- Deploys resources (jobs, pipelines, etc.) using targets in databricks.yml. (deploy = push to workspace)"
+0,2026-04-10 19:40:04.000000,What is the correct lifecycle order for Databricks bundle commands?,"init -> validate -> deploy. (generate is optional, for reverse-engineering existing resources)"
+0,2026-04-11 15:04:01.050731,How do you read from a Kafka topic in a DLT pipeline?,"spark.readStream.format(""kafka"").option(""kafka.bootstrap.servers"", ""..."").option(""subscribe"", ""topic_name"").load() -- Must use readStream (not read), format(""kafka"") (not delta), option(""subscribe"") (not ""topic""), and .load() with no path."
+0,2026-04-11 15:07:07.384321,"Which framework lets you define transformations and manages orchestration, cluster mgmt, monitoring, data quality, and error handling?","Delta Live Tables (DLT) -- NOT Databricks Workflows. DLT = declarative pipelines (define WHAT, it manages HOW). Workflows = orchestration of tasks/jobs. Key: 'define transformations' + 'data quality' = DLT."
+0,2026-04-11 15:17:27.638318,MERGE to deduplicate: keep only latest record per key?,"MERGE INTO tbl AS target USING (SELECT key, MAX(date) AS latest FROM tbl GROUP BY key) AS source ON target.key = source.key AND target.date < source.latest WHEN MATCHED THEN DELETE; -- Source = aggregated subquery (not raw table). Filter old rows in ON clause. DELETE the matches (old rows die, latest survives)."
+0,2026-04-11 15:22:02.927864,Databricks SQL alert: which template variable includes the query result value in the email?,"QUERY_RESULT_VALUE -- Use a custom template (not default). QUERY_RESULT_VALUE = the actual value returned by the alert query. QUERY_RESULT_ROWS = row count, QUERY_RESULT_COLS = column count. To show a specific number (like duplicate count), always QUERY_RESULT_VALUE."
+0,2026-04-11 15:33:02.929482,COPY INTO ran twice but loaded no data the second time. Why?,"COPY INTO is IDEMPOTENT -- it tracks which files have already been loaded and skips them on re-run. This is a feature, not a bug. (Auto Loader ALSO does incremental ingestion, but COPY INTO does too. The difference: Auto Loader = streaming/continuous, COPY INTO = batch/manual.)"
+0,2026-04-11 15:33:02.929482,COPY INTO vs Auto Loader: when to use which?,"COPY INTO = batch, idempotent, skips already-loaded files. Good for ad-hoc/scheduled loads. Auto Loader = streaming, file notification or directory listing, scales to millions of files. Both do incremental ingestion. Trap: don't fall for 'COPY INTO can't do incremental' -- it can, it just does it in batch mode."
+0,2026-04-11 15:40:50.022072,PySpark: compute average of a column per group (e.g. avg revenue per customer)?,"df.groupBy('customer_id').agg({'amount': 'avg'}) -- Must groupBy the key first, then agg. select() does NOT compute aggregations. withColumn() without a window won't group. Always: groupBy -> agg/avg/sum."
+0,2026-04-11 20:59:28.467194,What is a spot instance?,"A low-cost, interruptible cloud VM that can be terminated by the provider at any time."
+1574,2026-04-11 21:01:50.603037,A star schema is created in what Medallion Architecture layer?,C: Gold layer
+0,2026-04-11 21:04:26.878247,Convert JSON string column to structured format using a predefined schema?,from_json()
+0,2026-04-11 21:06:26.430154,Grant full privileges on a table to a user?,GRANT ALL PRIVILEGES ON TABLE <table> TO <user>;
+0,2026-04-11 21:09:48.609004,Create an external (unmanaged) table from existing data files at a path?,CREATE TABLE <name> USING DELTA LOCATION '<path>' — no UNMANAGED keyword exists; specifying LOCATION makes it external.
+1532,2026-04-13 10:47:09.513475,Create an unmanaged table at a specific location.,B: CREATE TABLE inventory USING DELTA LOCATION ‘dbfs:/user/username/retail‘
+0,2026-04-13 11:17:45,Why must a Databricks job use a cron expression to run on the first Monday of every month?,"Databricks simple schedules (daily/weekly/monthly) cannot express ""Nth weekday of the month"" logic. To schedule jobs like first Monday at 7:00 AM, Databricks requires an Advanced schedule using a Quartz cron expression, which is the only native and supported way to model this recurrence."
+1244,2026-04-13 11:20:22.048035,Time Travel in a Select Statement,"C: SELECT * FROM table_name TIMESTAMP AS OF date_sub(current_date(), 1)"
+0,2026-04-13 15:14:29,How do you create an external CSV table in Spark SQL with a pipe (|) delimiter and header row?,"CREATE TABLE orders_csv
+USING CSV
+OPTIONS (header=""true"", delimiter=""|"")
+LOCATION ""dbfs:/user/username/retail/orders-csv"";"
+0,2026-04-15 09:15:32.000000,A Databricks SQL Dashboard shows timestamps in UTC instead of America/New_York. What is the best way to fix this centrally?,"Set the SQL configuration parameter timezone to America/New_York in the SQL Admin Console.
+Why:
+Dashboards inherit the SQL Warehouse session timezone. Setting it in the SQL Admin Console updates all dashboards and queries at once without modifying tables or SQL code.
+Hook:
+
+Dashboards follow the SQL Warehouse timezone"
+0,2026-04-15 09:32:19,"In Databricks Delta Lake, what is the difference between Z‑Ordering and Liquid Clustering?","Z‑Ordering
+
+Manual OPTIMIZE ZORDER BY
+Rewrites all affected files each run
+Static (does not adapt to new query patterns)
+Best for stable, read‑heavy workloads
+
+Liquid Clustering
+
+Declared with CLUSTER BY
+Incremental (only clusters new/unclustered data)
+Adaptive to changing access patterns
+Lower write cost, less maintenance
+Recommended for new Delta tables
+
+Hook:
+
+Z‑Order = rewrite again
+Liquid Clustering = adjust over time"
+0,2026-04-15 09:39:02,"When setting a Databricks alert, how do you include the actual KPI value in the email notification?","Use an alert with a custom template.
+Why:
+
+Default alert templates notify only that a threshold was crossed
+Custom templates allow dynamic values (like the KPI number) to be included in the email
+
+Hook:
+
+If they want the number → Custom template"
