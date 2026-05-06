@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from study_engine import format_time_remaining, compute_pace
 
 # =============================
 # Config
@@ -31,11 +32,17 @@ def load_attempts(path=ATTEMPTS_PATH) -> pd.DataFrame:
     if os.path.exists(path):
         df = pd.read_csv(path)
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed", errors="coerce")
+        # Handle missing time_spent column for old records
+        if "time_spent" not in df.columns:
+            df["time_spent"] = 0
+        else:
+            df["time_spent"] = df["time_spent"].fillna(0)
         return df
-    return pd.DataFrame(columns=["QID", "timestamp", "selected", "correct"])
+    return pd.DataFrame(columns=["QID", "timestamp", "selected", "correct", "time_spent"])
 
 
-def record_attempt(qid: int, selected: str, correct: bool, path=ATTEMPTS_PATH) -> None:
+def record_attempt(qid: int, selected: str, correct: bool, path=ATTEMPTS_PATH, time_spent: int | None = None) -> None:
+    import time
     os.makedirs(os.path.dirname(path), exist_ok=True)
     write_header = not os.path.exists(path)
     row = pd.DataFrame([{
@@ -43,8 +50,53 @@ def record_attempt(qid: int, selected: str, correct: bool, path=ATTEMPTS_PATH) -
         "timestamp": datetime.now(),
         "selected": selected,
         "correct": bool(correct),
+        "time_spent": int(time_spent) if time_spent is not None else 0,
     }])
-    row.to_csv(path, mode="a", header=write_header, index=False)
+    
+    # Retry logic for file lock issues
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            row.to_csv(path, mode="a", header=write_header, index=False)
+            return
+        except (PermissionError, OSError) as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.2)  # Wait 200ms before retrying
+            else:
+                st.warning(f"⚠️ Could not save attempt (file may be locked). Please close Excel or other programs accessing the data folder.")
+                raise
+
+
+# =============================
+# Flagged Questions (Session-Level Review)
+# =============================
+def save_flagged_attempt(qid: int, session_id: str, flagged_path: str = None) -> None:
+    """Save a question flagged during a timed session for review later."""
+    if flagged_path is None:
+        flagged_path = r"C:\dbx-study-app\data\session_flagged.csv"
+    
+    os.makedirs(os.path.dirname(flagged_path), exist_ok=True)
+    write_header = not os.path.exists(flagged_path)
+    row = pd.DataFrame([{
+        "QID": int(qid),
+        "session_id": str(session_id),
+        "timestamp": datetime.now(),
+        "reviewed": False,
+    }])
+    row.to_csv(flagged_path, mode="a", header=write_header, index=False)
+
+
+def load_flagged_for_session(session_id: str, flagged_path: str = None) -> list:
+    """Load all flagged QIDs for a session."""
+    if flagged_path is None:
+        flagged_path = r"C:\dbx-study-app\data\session_flagged.csv"
+    
+    if not os.path.exists(flagged_path):
+        return []
+    
+    df = pd.read_csv(flagged_path)
+    session_flagged = df[df["session_id"] == str(session_id)]
+    return [int(qid) for qid in session_flagged["QID"].unique()]
 
 
 # =============================
@@ -251,6 +303,18 @@ def reset_study_session():
     st.session_state.step = "answer"   # answer | review
     st.session_state.review = None
     st.session_state.session_attempts_start = None
+    
+    # Timed session state
+    st.session_state.session_mode = "study"  # study | speed_drill | exam_mode
+    st.session_state.session_time_started = None
+    st.session_state.session_time_limit = None
+    st.session_state.session_time_ideal_pace = None
+    st.session_state.session_flagged_qids = []
+    st.session_state.session_skipped_qids = []  # Questions skipped during review (to reanswer at end)
+    st.session_state.session_question_times = {}  # {qid: time_in_seconds}
+    st.session_state.session_auto_submitted = False
+    st.session_state.session_current_q_start_time = None
+    st.session_state.session_id = None
 
 
 def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
@@ -284,12 +348,24 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
-def build_study_session(stats: pd.DataFrame, n: int) -> None:
+def build_study_session(stats: pd.DataFrame, n: int, use_random: bool = False) -> None:
     """
     Build a stable session list of QIDs + a snapshot map {qid -> question dict}.
     Prevents reordering mid-session when attempts are recorded.
+    
+    Args:
+        stats: DataFrame with question stats
+        n: Number of questions to select
+        use_random: If True, randomly select questions. If False, use priority sorting (default).
     """
-    work = stats.sort_values("priority", ascending=False).head(int(n)).reset_index(drop=True)
+    if use_random:
+        # For timed modes: randomly select questions
+        import numpy as np
+        work = stats.sample(n=min(int(n), len(stats)), random_state=None).reset_index(drop=True)
+    else:
+        # For study mode: sort by priority (low accuracy, flagged, harder, stale)
+        work = stats.sort_values("priority", ascending=False).head(int(n)).reset_index(drop=True)
+    
     qids = [int(x) for x in work["QID"].tolist()]
 
     qmap = {}
@@ -441,9 +517,11 @@ try:
         today_attempts = attempts[attempts["timestamp"] >= today]
         today_count = len(today_attempts)
         today_correct = int(today_attempts["correct"].sum()) if today_count > 0 else 0
+        today_missed = today_count - today_correct
         today_acc = f"{today_correct / today_count:.0%}" if today_count > 0 else "–"
         st.sidebar.markdown("### Today's Progress")
         st.sidebar.metric("Answered today", today_count)
+        st.sidebar.metric("Missed today", today_missed)
         st.sidebar.metric("Today's accuracy", today_acc)
     else:
         st.sidebar.markdown("### Today's Progress")
@@ -709,6 +787,42 @@ try:
     # =============================
     st.header("🧠 Study Mode")
 
+    # ===== MODE SELECTION =====
+    st.subheader("Select your study mode:")
+    mode_col1, mode_col2, mode_col3 = st.columns(3)
+    
+    with mode_col1:
+        if st.button("🧠 Study Mode (Custom)", use_container_width=True, key="btn_study_mode"):
+            reset_study_session()
+            st.session_state.session_mode = "study"
+            st.rerun()
+    
+    with mode_col2:
+        if st.button("⚡ Speed Drill (15Q × 20min)", use_container_width=True, key="btn_speed_drill"):
+            reset_study_session()
+            st.session_state.session_mode = "speed_drill"
+            from study_engine import initialize_timed_session
+            timed = initialize_timed_session("speed_drill")
+            st.session_state.session_id = timed["session_id"]
+            st.session_state.session_time_started = timed["started_at"]
+            st.session_state.session_time_limit = timed["time_limit_seconds"]
+            st.session_state.session_time_ideal_pace = timed["ideal_pace_seconds"]
+            st.rerun()
+    
+    with mode_col3:
+        if st.button("📝 Exam Sim (45Q × 90min)", use_container_width=True, key="btn_exam_mode"):
+            reset_study_session()
+            st.session_state.session_mode = "exam_mode"
+            from study_engine import initialize_timed_session
+            timed = initialize_timed_session("exam_mode")
+            st.session_state.session_id = timed["session_id"]
+            st.session_state.session_time_started = timed["started_at"]
+            st.session_state.session_time_limit = timed["time_limit_seconds"]
+            st.session_state.session_time_ideal_pace = timed["ideal_pace_seconds"]
+            st.rerun()
+    
+    st.markdown("---")
+
     if "step" not in st.session_state:
         reset_study_session()
 
@@ -718,20 +832,32 @@ try:
         st.warning("Focus filter produced no questions. Falling back to general set.")
         focused = stats.copy()
 
+    # Determine number of questions based on session mode
+    current_session_mode = st.session_state.get("session_mode", "study")
+    if current_session_mode == "exam_mode":
+        num_questions = 45
+    elif current_session_mode == "speed_drill":
+        num_questions = 15
+    else:  # study mode
+        num_questions = int(session_n)
+
     # build stable session when settings/focus change
     session_key = (
-        int(session_n),
+        num_questions,
         bool(confirmed_only),
         bool(hide_mastered),
         st.session_state.get("focus_type"),
         st.session_state.get("focus_topic"),
         st.session_state.get("focus_subtopic"),
+        current_session_mode,
     )
 
     if st.session_state.get("session_key") != session_key or not st.session_state.get("session_qids"):
         st.session_state.session_key = session_key
         st.session_state.session_attempts_start = len(attempts)
-        build_study_session(focused, int(session_n))
+        # Use random selection for timed modes, priority-based for study mode
+        use_random = current_session_mode in ["exam_mode", "speed_drill"]
+        build_study_session(focused, num_questions, use_random=use_random)
 
     # Handle jump-to-QID request
     jump_target = st.session_state.pop("jump_to_qid", None)
@@ -779,7 +905,20 @@ try:
     elif focus_type == "flagged":
         st.info("Focus: Flagged for Review (211 questions you marked)")
 
-    # session complete -> robust summary
+    # session complete -> check if there are skipped questions to reanswer
+    session_mode = st.session_state.get("session_mode", "study")
+    skipped_qids = st.session_state.get("session_skipped_qids", [])
+    
+    if st.session_state.i >= len(qids) and skipped_qids and session_mode in ["exam_mode", "speed_drill"]:
+        # Loop back to reanswer skipped questions
+        st.session_state.session_qids = skipped_qids
+        st.session_state.i = 0
+        st.session_state.step = "answer"
+        st.session_state.review = None
+        st.session_state.session_skipped_qids = []  # Clear skipped list to avoid re-looping
+        st.info("📋 **Reanswering skipped questions...**")
+        st.rerun()
+    
     if st.session_state.i >= len(qids):
         st.success("✅ Session complete! Great work.")
 
@@ -813,6 +952,102 @@ try:
             if not summary["missed"].empty:
                 st.subheader("Missed Questions (to review)")
                 st.dataframe(summary["missed"], width='stretch')
+
+            # ===== FLAGGED QUESTIONS REVIEW (Timed Modes) =====
+            current_session_mode = st.session_state.get("session_mode", "study")
+            if current_session_mode in ["exam_mode", "speed_drill"] and st.session_state.session_id:
+                from study_engine import load_flagged_for_session
+                flagged_qids = load_flagged_for_session(st.session_state.session_id)
+                
+                if flagged_qids:
+                    st.markdown("---")
+                    st.subheader(f"🚩 Flagged for Review ({len(flagged_qids)} questions)")
+                    st.caption("These are questions you flagged during the session. Review them below to understand why you flagged them.")
+                    
+                    # Display flagged questions
+                    flagged_display = []
+                    for qid in flagged_qids:
+                        if qid in qmap:
+                            q_info = qmap[qid]
+                            flagged_display.append({
+                                "QID": qid,
+                                "Topic": q_info.get("Topic", ""),
+                                "Subtopic": q_info.get("Subtopic", ""),
+                                "Difficulty": q_info.get("Difficulty", ""),
+                            })
+                    
+                    if flagged_display:
+                        flagged_df = pd.DataFrame(flagged_display)
+                        st.dataframe(flagged_df, width='stretch')
+                    
+                    # Option to review flagged questions
+                    if st.button("📖 Review flagged questions in detail", key="btn_review_flagged"):
+                        # Create a flagged-only review session with full question data
+                        if flagged_qids:
+                            # Rebuild session to contain only flagged questions
+                            flagged_qmap = {}
+                            for qid in flagged_qids:
+                                if qid in qmap:
+                                    flagged_qmap[qid] = qmap[qid]
+                            
+                            # Set up flagged review session
+                            st.session_state.session_qids = flagged_qids
+                            st.session_state.session_map = flagged_qmap
+                            st.session_state.i = 0
+                            st.session_state.step = "answer"
+                            st.session_state.review = None
+                            st.session_state.review_mode = "flagged_only"
+                            st.rerun()
+
+            # ===== TIME ANALYTICS (Timed Modes) =====
+            if current_session_mode in ["exam_mode", "speed_drill"]:
+                attempts_now = load_attempts()
+                start_idx = st.session_state.get("session_attempts_start", None)
+                
+                if not attempts_now.empty and start_idx is not None and start_idx < len(attempts_now):
+                    st.markdown("---")
+                    st.subheader("⏱️ Time Analytics")
+                    
+                    sess = attempts_now.iloc[start_idx:].copy()
+                    sess["QID"] = sess["QID"].astype(int)
+                    sess = sess[sess["QID"].isin(set(qmap.keys()))].copy()
+                    
+                    if not sess.empty and "time_spent" in sess.columns:
+                        total_time = sess["time_spent"].sum()
+                        avg_time_per_q = sess["time_spent"].mean()
+                        
+                        # Overall time metrics
+                        tc1, tc2, tc3 = st.columns(3)
+                        with tc1:
+                            time_str = format_time_remaining(int(total_time))
+                            st.metric("Total Time", time_str)
+                        with tc2:
+                            st.metric("Avg/Question", f"{avg_time_per_q:.1f}s")
+                        with tc3:
+                            ideal_pace = st.session_state.get("session_time_ideal_pace", 120)
+                            if avg_time_per_q < ideal_pace:
+                                st.metric("vs Ideal", f"✅ {ideal_pace - avg_time_per_q:.0f}s faster")
+                            else:
+                                st.metric("vs Ideal", f"⚠️ {avg_time_per_q - ideal_pace:.0f}s slower")
+                        
+                        # Time breakdown by difficulty
+                        if "Difficulty" in sess.columns:
+                            st.subheader("Time by Difficulty")
+                            diff_time = sess.groupby("Difficulty")["time_spent"].agg(
+                                ["count", "mean", "sum"]
+                            ).round(1).reset_index()
+                            diff_time.columns = ["Difficulty", "Questions", "Avg (sec)", "Total (sec)"]
+                            st.dataframe(diff_time, width='stretch', use_container_width=True)
+                        
+                        # Time breakdown by topic
+                        if "Topic" in sess.columns:
+                            st.subheader("Time by Topic (Top 10)")
+                            topic_time = sess.groupby("Topic")["time_spent"].agg(
+                                ["count", "mean"]
+                            ).sort_values("mean", ascending=False).head(10).reset_index()
+                            topic_time.columns = ["Topic", "Questions", "Avg (sec)"]
+                            topic_time["Avg (sec)"] = topic_time["Avg (sec)"].round(1)
+                            st.dataframe(topic_time, width='stretch', use_container_width=True)
 
         colA, colB, colC, colD = st.columns(4)
 
@@ -859,6 +1094,58 @@ try:
     nbs_df = load_notebooks()
     fc_df = load_flashcards()
 
+    # ===== TIMER LOGIC (for timed modes) =====
+    session_mode = st.session_state.get("session_mode", "study")
+    is_timed = session_mode in ["exam_mode", "speed_drill"]
+    
+    if is_timed and st.session_state.session_time_started is not None:
+        from datetime import timedelta
+        elapsed_seconds = int((datetime.now() - st.session_state.session_time_started).total_seconds())
+        time_limit = st.session_state.session_time_limit or 5400
+        remaining_seconds = max(0, time_limit - elapsed_seconds)
+        
+        # Check for timeout
+        if remaining_seconds <= 0 and not st.session_state.session_auto_submitted:
+            st.session_state.session_auto_submitted = True
+            st.error("⏰ TIME'S UP! Auto-submitting remaining questions...")
+            st.session_state.i = len(qids)  # Jump to end of session
+            st.rerun()
+        
+        # Display timer header with refresh button
+        timer_col1, timer_col2, timer_col3, timer_col4, timer_col5 = st.columns([2, 2, 1, 1, 0.8])
+        
+        with timer_col1:
+            time_str = format_time_remaining(remaining_seconds)
+            st.metric("⏰ Time Remaining", time_str)
+        
+        with timer_col2:
+            pace_info = compute_pace(elapsed_seconds, st.session_state.i, 
+                                   st.session_state.session_time_ideal_pace or 120)
+            pace_status = pace_info["pace_status"]
+            if pace_status == "on_pace":
+                st.metric("Pace", "🟢 On pace")
+            elif pace_status == "ahead":
+                ahead_min = abs(pace_info["ahead_or_behind_seconds"]) // 60
+                st.metric("Pace", f"🟢 Ahead {ahead_min}m")
+            else:
+                behind_min = abs(pace_info["ahead_or_behind_seconds"]) // 60
+                st.metric("Pace", f"🟡 Behind {behind_min}m")
+        
+        with timer_col3:
+            st.metric("Answered", f"{st.session_state.i}/{len(qids)}")
+        
+        with timer_col4:
+            mode_label = "Exam" if session_mode == "exam_mode" else "Drill"
+            st.metric("Mode", mode_label)
+        
+        with timer_col5:
+            if st.button("🔄", help="Refresh timer", key="timer_refresh"):
+                st.rerun()
+        
+        # Warning if <5 minutes
+        if remaining_seconds < 300 and remaining_seconds > 0:
+            st.warning(f"⏰ **HURRY UP!** Only {format_time_remaining(remaining_seconds)} left!")
+
     # Stage 1: Answer
     if st.session_state.step == "answer":
         with question_box:
@@ -881,12 +1168,16 @@ try:
                 meta_line += " | 🃏 Quizlet"
             st.caption(meta_line)
 
-            st.markdown(q.get("Question", ""))
+            st.markdown(q.get("Question", "").replace("\n", "  \n"))
 
             options = q.get("Options", {})
             if not options:
                 st.error("This question has no answer options (A–F).")
                 if st.button("Skip"):
+                    current_qid = st.session_state.review.get("qid") if st.session_state.review else None
+                    current_session_mode = st.session_state.get("session_mode", "study")
+                    if current_session_mode in ["exam_mode", "speed_drill"] and current_qid and current_qid not in st.session_state.session_skipped_qids:
+                        st.session_state.session_skipped_qids.append(current_qid)
                     st.session_state.i += 1
                     st.session_state.step = "answer"
                     st.session_state.review = None
@@ -899,13 +1190,78 @@ try:
                     list(options.keys()),
                     format_func=lambda x: f"{x}: {options[x]}"
                 )
-                submitted = st.form_submit_button("Submit")
+                
+                # Flag for review checkbox (only in timed modes)
+                is_timed = session_mode in ["exam_mode", "speed_drill"]
+                flag_for_review = False
+                if is_timed:
+                    st.markdown("---")
+                    flag_for_review = st.checkbox("🚩 Flag for review (skip answer & move to next)", key=f"flag_{current_qid}")
+                
+                # Button behavior depends on flag checkbox
+                if is_timed and flag_for_review:
+                    # When flagging: only show the flag button
+                    submitted = False
+                    skip_submitted = st.form_submit_button("✅ Submit & Flag → Next (skip review)", use_container_width=True)
+                else:
+                    # Normal mode: show review button + Skip button
+                    btn_col1, btn_col2 = st.columns(2)
+                    with btn_col1:
+                        submitted = st.form_submit_button("Submit & Review", use_container_width=True)
+                    with btn_col2:
+                        skip_clicked = st.form_submit_button("⏭️ Skip", use_container_width=True)
+                    skip_submitted = False
+
+            # Handle skip button (new)
+            if 'skip_clicked' in locals() and skip_clicked and not submitted:
+                # Track skipped question for reanswering
+                current_session_mode = st.session_state.get("session_mode", "study")
+                if current_qid and current_session_mode in ["exam_mode", "speed_drill"] and current_qid not in st.session_state.session_skipped_qids:
+                    st.session_state.session_skipped_qids.append(current_qid)
+                
+                st.session_state.i += 1
+                st.session_state.step = "answer"
+                st.session_state.review = None
+                st.rerun()
+
+            # Handle flagged submission (when flag button is clicked)
+            if is_timed and flag_for_review and skip_submitted and not submitted:
+                # Track flag and auto-skip
+                if st.session_state.session_id:
+                    save_flagged_attempt(current_qid, st.session_state.session_id)
+                
+                # Mark as flagged in session state
+                if current_qid not in st.session_state.session_flagged_qids:
+                    st.session_state.session_flagged_qids.append(current_qid)
+                
+                # Record attempt with time (but mark as flagged, don't evaluate)
+                if is_timed and st.session_state.session_time_started:
+                    elapsed = int((datetime.now() - st.session_state.session_time_started).total_seconds())
+                    time_on_q = elapsed - sum(st.session_state.session_question_times.get(qid, 0) for qid in st.session_state.session_question_times)
+                else:
+                    time_on_q = 0
+                
+                # Record as "flagged" (don't evaluate correctness yet)
+                record_attempt(current_qid, "FLAGGED", False, time_spent=time_on_q)
+                
+                st.session_state.i += 1
+                st.session_state.step = "answer"
+                st.session_state.review = None
+                st.rerun()
 
             if submitted:
                 correct_letter = q.get("CorrectLetter")
                 is_correct = (choice == correct_letter)
 
-                record_attempt(current_qid, choice, is_correct)
+                # Track time spent on this question (for timed modes)
+                if is_timed and st.session_state.session_time_started:
+                    elapsed = int((datetime.now() - st.session_state.session_time_started).total_seconds())
+                    time_on_q = elapsed - sum(st.session_state.session_question_times.get(qid, 0) for qid in st.session_state.session_question_times)
+                    st.session_state.session_question_times[current_qid] = time_on_q
+                else:
+                    time_on_q = 0
+
+                record_attempt(current_qid, choice, is_correct, time_spent=time_on_q)
 
                 st.session_state.review = {
                     "qid": current_qid,
@@ -919,6 +1275,7 @@ try:
                     "difficulty": q.get("Difficulty", ""),
                     "question": q.get("Question", ""),
                     "options": options,
+                    "time_spent": time_on_q,
                 }
                 st.session_state.step = "review"
                 st.rerun()
@@ -953,7 +1310,7 @@ try:
                 meta_line += " | 🃏 Quizlet"
             st.caption(meta_line)
 
-            st.markdown(rv.get("question", ""))
+            st.markdown(rv.get("question", "").replace("\n", "  \n"))
 
             st.markdown("**Your selection:** " + str(rv.get("choice")))
             st.markdown("**Options:**")
@@ -968,7 +1325,7 @@ try:
                 st.error(f"❌ Incorrect — correct answer is **{rv.get('correct_letter')}**")
 
             st.markdown("### Explanation")
-            st.markdown(rv.get("explanation"))
+            st.markdown(rv.get("explanation", "").replace("\n", "  \n"))
 
             ver_notes = rv.get("verification_notes")
             if pd.notna(ver_notes):
@@ -1049,17 +1406,29 @@ try:
                     st.rerun()
             with c2:
                 if st.button("Skip"):
+                    current_qid = st.session_state.review.get("qid")
+                    # For timed modes, track skipped questions to reanswer at end
+                    current_session_mode = st.session_state.get("session_mode", "study")
+                    if current_qid and current_session_mode in ["exam_mode", "speed_drill"] and current_qid not in st.session_state.session_skipped_qids:
+                        st.session_state.session_skipped_qids.append(current_qid)
                     st.session_state.i += 1
                     st.session_state.step = "answer"
                     st.session_state.review = None
                     st.rerun()
             with c3:
-                if st.button("Clear focus"):
-                    st.session_state.focus_type = None
-                    st.session_state.focus_topic = None
-                    st.session_state.focus_subtopic = None
-                    reset_study_session()
-                    st.rerun()
+                # For flagged review mode, show "Done reviewing" button
+                if st.session_state.get("review_mode") == "flagged_only":
+                    if st.button("✅ Done reviewing", key="done_flagged_review"):
+                        st.session_state.review_mode = None
+                        st.session_state.i = len(st.session_state.session_qids)  # Jump to end of session
+                        st.rerun()
+                else:
+                    if st.button("Clear focus"):
+                        st.session_state.focus_type = None
+                        st.session_state.focus_topic = None
+                        st.session_state.focus_subtopic = None
+                        reset_study_session()
+                        st.rerun()
             with c4:
                 if st.button("Go to Dashboard"):
                     st.session_state.nav_request = "Weakness Dashboard"
