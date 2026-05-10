@@ -235,11 +235,50 @@ def get_notebook_url(qid: int, nbs_df: pd.DataFrame) -> str:
 # Questions + metrics
 # =============================
 @st.cache_data(show_spinner=False)
+def remove_emojis(text: str) -> str:
+    """Remove emoji and special characters from text."""
+    if pd.isna(text):
+        return text
+    text = str(text)
+    # Remove emoji characters (Unicode ranges for emoji)
+    import re
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # Emoticons
+        "\U0001F300-\U0001F5FF"  # Symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # Transport & map symbols
+        "\U0001F1E0-\U0001F1FF"  # Flags (iOS)
+        "\U00002500-\U00002BEF"  # Chinese characters
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U00002702-\U000027B0"  # Dingbats
+        "\U000024C2-\U0001F251"  # Enclosed characters
+        "\U0001f926-\U0001f937"  # Additional emoticons
+        "\U00010000-\U0010ffff"  # Other characters
+        "\u2640-\u2642"
+        "\u2600-\u2B55"
+        "\u200d"
+        "\u23cf"
+        "\u23e9"
+        "\u231a"
+        "\ufe0f"
+        "\u3030"
+        "]+", flags=re.UNICODE
+    )
+    return emoji_pattern.sub(r'', text)
+
+
 def load_questions(xlsx_path: str, sheet_name: str) -> pd.DataFrame:
     df = pd.read_excel(xlsx_path, sheet_name=sheet_name)
     excluded = load_excluded_qids()
     if excluded:
         df = df[~df["QID"].isin(excluded)]
+    
+    # Remove emojis from all text columns
+    text_columns = ["Question", "CorrectAnswer", "Explanation", "A", "B", "C", "D", "E", "F"]
+    for col in text_columns:
+        if col in df.columns:
+            df[col] = df[col].apply(remove_emojis)
+    
     return df
 
 
@@ -306,6 +345,8 @@ def reset_study_session():
     
     # Timed session state
     st.session_state.session_mode = "study"  # study | speed_drill | exam_mode
+    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random
+    st.session_state.study_deep_dive_topic = None
     st.session_state.session_time_started = None
     st.session_state.session_time_limit = None
     st.session_state.session_time_ideal_pace = None
@@ -319,6 +360,28 @@ def reset_study_session():
 
 def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
     focus_type = st.session_state.get("focus_type")
+    study_variant = st.session_state.get("study_variant", "normal")
+    
+    # Handle study variants (these override focus_type for Study Mode)
+    if study_variant == "deep_dive":
+        topic = st.session_state.get("study_deep_dive_topic")
+        if topic:
+            work = df[df["Topic"] == topic].copy()
+            # Sort by weakness (low accuracy first)
+            work = work.sort_values("accuracy", ascending=True)
+            return work
+    
+    elif study_variant == "untouched":
+        # Questions with 0 attempts
+        work = df[df["attempts"] == 0].copy()
+        # Sort by difficulty (harder first) then by stale weight
+        return work.sort_values(["Difficulty"], ascending=False, key=lambda x: x.map({"Hard": 0, "Medium": 1, "Easy": 2}) if x.name == "Difficulty" else x)
+    
+    elif study_variant == "random":
+        # Will be handled in build_study_session with use_random=True
+        return df
+    
+    # Default: apply focus filters if any
     if not focus_type:
         return df
 
@@ -358,12 +421,15 @@ def build_study_session(stats: pd.DataFrame, n: int, use_random: bool = False) -
         n: Number of questions to select
         use_random: If True, randomly select questions. If False, use priority sorting (default).
     """
-    if use_random:
-        # For timed modes: randomly select questions
+    study_variant = st.session_state.get("study_variant", "normal")
+    
+    if use_random or study_variant == "random":
+        # For timed modes and random mode: randomly select questions
         import numpy as np
         work = stats.sample(n=min(int(n), len(stats)), random_state=None).reset_index(drop=True)
     else:
         # For study mode: sort by priority (low accuracy, flagged, harder, stale)
+        # For deep_dive and untouched: already sorted by apply_focus_filters
         work = stats.sort_values("priority", ascending=False).head(int(n)).reset_index(drop=True)
     
     qids = [int(x) for x in work["QID"].tolist()]
@@ -466,15 +532,184 @@ def build_session_summary(attempts_now: pd.DataFrame, start_index: int, qmap: di
 
 
 # =============================
+# Search Functionality
+# =============================
+def search_content(questions: pd.DataFrame, keyword: str, case_sensitive: bool = False, confirmed_only: bool = False) -> list:
+    """
+    Search for keyword across questions, answers, notes, flashcards, and notebooks.
+    Returns a list of dicts with matching results.
+    
+    Args:
+        questions: DataFrame with questions
+        keyword: Search keyword (can be substring)
+        case_sensitive: Whether search is case-sensitive
+        confirmed_only: Only include confirmed questions
+    
+    Returns:
+        List of dicts with QID, matching_field, matching_text, note, flashcard_front, flashcard_back, notebook_url
+    """
+    results = []
+    
+    # Prepare keyword
+    search_key = keyword if case_sensitive else keyword.lower()
+    
+    # Load auxiliary data
+    notes_df = load_notes()
+    flashcards_df = load_flashcards()
+    notebooks_df = load_notebooks()
+    
+    # Filter to confirmed questions if requested
+    search_df = questions.copy()
+    if confirmed_only and "VerificationStatus" in search_df.columns:
+        search_df = search_df[search_df["VerificationStatus"] == "Confirmed"].copy()
+    
+    # Build a map for quick lookups
+    notes_map = {int(qid): note for qid, note in zip(notes_df["QID"], notes_df["note"]) if pd.notna(note)}
+    flashcard_map = {}  # {qid: [(front, back, index), ...]}
+    for idx, row in flashcards_df.iterrows():
+        qid = int(row["QID"])
+        if qid not in flashcard_map:
+            flashcard_map[qid] = []
+        flashcard_map[qid].append((row["front"], row["back"], idx))
+    
+    notebook_map = {int(qid): url for qid, url in zip(notebooks_df["QID"], notebooks_df["url"]) if pd.notna(url)}
+    
+    # Search through questions
+    for _, row in search_df.iterrows():
+        qid = int(row["QID"])
+        matched_fields = []
+        
+        # Search Question field
+        q_text = str(row.get("Question", ""))
+        q_text_search = q_text if case_sensitive else q_text.lower()
+        if search_key in q_text_search:
+            matched_fields.append({
+                "field": "Question",
+                "text": q_text,
+                "snippet": q_text[:200] if len(q_text) > 200 else q_text
+            })
+        
+        # Search Answer field (correct answer)
+        if "CorrectAnswer" in row.index:
+            correct_ans = str(row.get("CorrectAnswer", ""))
+            correct_ans_search = correct_ans if case_sensitive else correct_ans.lower()
+            if search_key in correct_ans_search:
+                matched_fields.append({
+                    "field": "CorrectAnswer",
+                    "text": correct_ans,
+                    "snippet": correct_ans[:200] if len(correct_ans) > 200 else correct_ans
+                })
+        
+        # Search option fields (A, B, C, D, E, F)
+        for letter in ["A", "B", "C", "D", "E", "F"]:
+            if letter in row.index:
+                opt_text = str(row.get(letter, ""))
+                opt_text_search = opt_text if case_sensitive else opt_text.lower()
+                if search_key in opt_text_search:
+                    matched_fields.append({
+                        "field": f"Option {letter}",
+                        "text": opt_text,
+                        "snippet": opt_text[:200] if len(opt_text) > 200 else opt_text
+                    })
+        
+        # Search Note field if exists
+        if "Note" in row.index:
+            note_text = str(row.get("Note", ""))
+            note_text_search = note_text if case_sensitive else note_text.lower()
+            if search_key in note_text_search:
+                matched_fields.append({
+                    "field": "Note (Question)",
+                    "text": note_text,
+                    "snippet": note_text[:200] if len(note_text) > 200 else note_text
+                })
+        
+        # Search Explanation field if exists
+        if "Explanation" in row.index:
+            expl_text = str(row.get("Explanation", ""))
+            expl_text_search = expl_text if case_sensitive else expl_text.lower()
+            if search_key in expl_text_search:
+                matched_fields.append({
+                    "field": "Explanation",
+                    "text": expl_text,
+                    "snippet": expl_text[:200] if len(expl_text) > 200 else expl_text
+                })
+        
+        # Search user notes (notes.csv)
+        if qid in notes_map:
+            user_note = notes_map[qid]
+            user_note_search = user_note if case_sensitive else user_note.lower()
+            if search_key in user_note_search:
+                matched_fields.append({
+                    "field": "User Note",
+                    "text": user_note,
+                    "snippet": user_note[:200] if len(user_note) > 200 else user_note
+                })
+        
+        # Search flashcard front/back
+        if qid in flashcard_map:
+            for front, back, fc_idx in flashcard_map[qid]:
+                front_search = front if case_sensitive else front.lower()
+                back_search = back if case_sensitive else back.lower()
+                if search_key in front_search:
+                    matched_fields.append({
+                        "field": "Flashcard (Front)",
+                        "text": front,
+                        "snippet": front[:200] if len(front) > 200 else front
+                    })
+                if search_key in back_search:
+                    matched_fields.append({
+                        "field": "Flashcard (Back)",
+                        "text": back,
+                        "snippet": back[:200] if len(back) > 200 else back
+                    })
+        
+        # If any matches found, add to results
+        if matched_fields:
+            result = {
+                "QID": qid,
+                "Topic": row.get("Topic", "N/A"),
+                "Subtopic": row.get("Subtopic", "N/A"),
+                "Difficulty": row.get("Difficulty", "N/A"),
+                "matched_fields": matched_fields,
+                "question_text": str(row.get("Question", ""))[:300],
+                "correct_answer": str(row.get("CorrectAnswer", "")),
+                "correct_letter": row.get("CorrectLetter", ""),
+                "options": get_options(row),
+                "notebook_url": notebook_map.get(qid, ""),
+                "has_flashcard": qid in flashcard_map,
+                "has_user_note": qid in notes_map
+            }
+            results.append(result)
+    
+    return results
+
+
+# =============================
 # Navigation (fixes StreamlitAPIException)
 # =============================
 if "nav_mode" not in st.session_state:
     st.session_state.nav_mode = "Study Mode"
 
+# Callback for search jump
+def jump_to_question(qid):
+    st.session_state.jump_to_qid = qid
+    st.session_state.jump_from_search = True
+
 # Apply nav_request BEFORE widget instantiation
 if st.session_state.get("nav_request"):
     st.session_state.nav_mode = st.session_state.nav_request
     st.session_state.nav_request = None
+
+# Handle jump_from_search navigation (before radio button is created)
+if st.session_state.get("jump_from_search"):
+    st.session_state.nav_mode = "Study Mode"
+    st.session_state.jump_from_search = False
+
+# Check for pending jumps (from button clicks) and rerun
+if st.session_state.get("pending_jump_qid") is not None:
+    st.session_state.jump_to_qid = st.session_state.pop("pending_jump_qid")
+    st.session_state.jump_from_search = st.session_state.pop("pending_jump_from_search", False)
+    st.rerun()
 
 # =============================
 # Streamlit UI
@@ -482,22 +717,34 @@ if st.session_state.get("nav_request"):
 st.set_page_config(page_title="Databricks Associate Engineer Study App", layout="wide")
 st.title("Databricks Associate Engineer Study App")
 
+# Calculate days until exam
+exam_date = pd.Timestamp("2026-06-16")
+today = pd.Timestamp.now()
+days_until_exam = (exam_date - today).days
+
+# Display exam countdown in sidebar with visual emphasis (green success style)
+if days_until_exam > 0:
+    st.sidebar.markdown(f"<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.2); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 14px; color: #999;'>📌 EXAM: JUNE 16</p><p style='margin: 10px 0 0 0; font-size: 36px; font-weight: bold; color: #00C864;'>{days_until_exam}</p><p style='margin: 5px 0 0 0; font-size: 12px; color: #999;'>days left</p></div>", unsafe_allow_html=True)
+else:
+    st.sidebar.warning("⚠️ Exam is today or past!")
+st.sidebar.markdown("---")
+
 # Sidebar navigation (do not mutate nav_mode after this widget exists)
-mode = st.sidebar.radio("Mode", ["Study Mode", "Weakness Dashboard"], key="nav_mode")
+mode = st.sidebar.radio("Mode", ["Study Mode", "Weakness Dashboard", "Search"], key="nav_mode")
 
 st.sidebar.markdown("### Settings")
 confirmed_only = st.sidebar.checkbox("Confirmed only (recommended)", value=True)
 hide_mastered = st.sidebar.checkbox("Hide mastered (≥85% and ≥3 attempts)", value=True)
 show_qid = st.sidebar.checkbox("Show key (QID)", value=True)
 session_n = st.sidebar.number_input("Questions per session", min_value=5, max_value=50, value=15, step=5)
-show_debug = st.sidebar.checkbox("Show debug tables", value=False)
+
 
 st.sidebar.markdown("### Jump to QID")
 jump_qid = st.sidebar.number_input("Enter QID:", min_value=0, value=0, step=1, key="jump_qid_input")
 if st.sidebar.button("Go", key="jump_qid_btn") and jump_qid > 0:
     st.session_state.jump_to_qid = int(jump_qid)
 
-with st.expander("Startup status", expanded=True):
+with st.expander("Startup status", expanded=False):
     st.write("Working directory:", os.getcwd())
     st.write("Excel path:", DATA_PATH)
     st.write("Attempts path:", ATTEMPTS_PATH)
@@ -507,6 +754,8 @@ try:
         st.error("❌ Excel file not found.")
         st.info(r"Expected: C:\dbx-study-app\data\DBx_Questions.xlsx")
         st.stop()
+
+
 
     questions = load_questions(DATA_PATH, SHEET_NAME)
     attempts = load_attempts()
@@ -776,10 +1025,89 @@ try:
             export_text = "\n".join(export_lines)
             st.code(export_text, language=None)
 
-        if show_debug:
-            st.subheader("Debug: attempted sample")
-            st.dataframe(attempted.head(50), width='stretch')
 
+
+        st.stop()
+
+    # =============================
+    # Search Mode
+    # =============================
+    if mode == "Search" and not st.session_state.get("jump_to_qid"):
+        st.header("🔍 Search Questions")
+        
+        # Callback to trigger search on Enter key
+        def trigger_search():
+            st.session_state.trigger_search_flag = True
+        
+        # Search input (Enter key triggers search via on_change callback)
+        search_keyword = st.text_input(
+            "Enter keyword to search (e.g. 'collect_set'):",
+            placeholder="Type a keyword, phrase, or technical term...",
+            key="search_keyword_input",
+            on_change=trigger_search
+        )
+        
+        # Options and button on same line
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            case_sensitive = st.checkbox("Case sensitive", value=False, key="search_case_sensitive")
+        
+        with col2:
+            st.write("")  # Spacer
+        
+        with col3:
+            perform_search = st.button("🔍 Search", use_container_width=True, key="btn_perform_search")
+        
+        # Perform search if button clicked or Enter pressed in search box
+        perform_search = perform_search or st.session_state.get("trigger_search_flag", False)
+        
+        if perform_search and search_keyword.strip():
+            st.session_state.trigger_search_flag = False  # Reset flag
+            st.markdown("---")
+            with st.spinner("Searching..."):
+                results = search_content(questions, search_keyword.strip(), case_sensitive=case_sensitive, confirmed_only=confirmed_only)
+            
+            if results:
+                st.success(f"Found **{len(results)}** question(s) matching '{search_keyword}'")
+                st.markdown("---")
+                
+                for idx, result in enumerate(results, 1):
+                    with st.expander(
+                        f"QID {result['QID']} | {result['Topic']} → {result['Subtopic']} | {result['Difficulty']}",
+                        expanded=(idx == 1)  # Expand first result by default
+                    ):
+                        # Question text
+                        st.markdown("**❓ Question:**")
+                        st.write(result["question_text"])
+                        
+                        # Answer options
+                        st.markdown("**📋 Options:**")
+                        for letter, text in result["options"].items():
+                            st.write(f"**{letter})** {text}")
+                        
+                        # Additional metadata (flashcard only)
+                        if result["has_flashcard"]:
+                            st.info("🃏 Has flashcard")
+                        
+                        # Action button
+                        st.button(
+                            "🎯 Study this Question",
+                            key=f"go_q_{result['QID']}",
+                            on_click=jump_to_question,
+                            args=(result['QID'],)
+                        )
+            else:
+                st.warning(f"No questions found matching '{search_keyword}'. Try a different keyword.")
+        elif not search_keyword.strip() and perform_search:
+            st.warning("Please enter a search keyword first.")
+        
+        st.markdown("---")
+        st.caption("💡 **Tips:**")
+        st.caption("- Search is case-insensitive by default (use checkbox to toggle)")
+        st.caption("- Searches through: Questions, Answers, Options, User Notes, Flashcards, Explanations")
+        st.caption("- Example: 'collect_set', 'ADLS', 'performance', 'Databricks SQL'")
+        
         st.stop()
 
     # =============================
@@ -791,14 +1119,18 @@ try:
     st.subheader("Select your study mode:")
     mode_col1, mode_col2, mode_col3 = st.columns(3)
     
+    current_mode = st.session_state.get("session_mode", "study")
+    
     with mode_col1:
-        if st.button("🧠 Study Mode (Custom)", use_container_width=True, key="btn_study_mode"):
+        study_label = ("✓ " if current_mode == "study" else "") + "🧠 Study Mode (Custom)"
+        if st.button(study_label, use_container_width=True, key="btn_study_mode"):
             reset_study_session()
             st.session_state.session_mode = "study"
             st.rerun()
     
     with mode_col2:
-        if st.button("⚡ Speed Drill (15Q × 20min)", use_container_width=True, key="btn_speed_drill"):
+        drill_label = ("✓ " if current_mode == "speed_drill" else "") + "⚡ Speed Drill (15Q × 20min)"
+        if st.button(drill_label, use_container_width=True, key="btn_speed_drill"):
             reset_study_session()
             st.session_state.session_mode = "speed_drill"
             from study_engine import initialize_timed_session
@@ -810,7 +1142,8 @@ try:
             st.rerun()
     
     with mode_col3:
-        if st.button("📝 Exam Sim (45Q × 90min)", use_container_width=True, key="btn_exam_mode"):
+        exam_label = ("✓ " if current_mode == "exam_mode" else "") + "📝 Exam Sim (45Q × 90min)"
+        if st.button(exam_label, use_container_width=True, key="btn_exam_mode"):
             reset_study_session()
             st.session_state.session_mode = "exam_mode"
             from study_engine import initialize_timed_session
@@ -820,6 +1153,58 @@ try:
             st.session_state.session_time_limit = timed["time_limit_seconds"]
             st.session_state.session_time_ideal_pace = timed["ideal_pace_seconds"]
             st.rerun()
+    
+    st.markdown("---")
+    
+    # Study Mode Variants (only show if in study mode)
+    if current_mode == "study":
+        st.subheader("📚 Study Variant:")
+        variant_col1, variant_col2, variant_col3, variant_col4 = st.columns(4)
+        
+        current_variant = st.session_state.get("study_variant", "normal")
+        
+        with variant_col1:
+            variant_label = ("✓ " if current_variant == "normal" else "") + "📊 Priority (weak first)"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_normal"):
+                st.session_state.study_variant = "normal"
+                st.session_state.session_key = None  # Rebuild session
+                st.rerun()
+        
+        with variant_col2:
+            variant_label = ("✓ " if current_variant == "untouched" else "") + "🆕 Untouched (0 attempts)"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_untouched"):
+                st.session_state.study_variant = "untouched"
+                st.session_state.session_key = None
+                st.rerun()
+        
+        with variant_col3:
+            variant_label = ("✓ " if current_variant == "random" else "") + "🎲 Random"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_random"):
+                st.session_state.study_variant = "random"
+                st.session_state.session_key = None
+                st.rerun()
+        
+        with variant_col4:
+            variant_label = ("✓ " if current_variant == "deep_dive" else "") + "🎯 Topic Deep Dive"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_deep_dive"):
+                st.session_state.study_variant = "deep_dive"
+                st.session_state.session_key = None
+                st.rerun()
+        
+        # Topic selector for Deep Dive mode
+        if current_variant == "deep_dive":
+            topics = sorted(stats["Topic"].unique())
+            selected_topic = st.selectbox(
+                "Select topic to deep dive:",
+                options=topics,
+                key="deep_dive_topic_select"
+            )
+            if selected_topic:
+                st.session_state.study_deep_dive_topic = selected_topic
+                st.session_state.session_key = None
+                topic_questions = stats[stats["Topic"] == selected_topic]
+                weak_count = len(topic_questions[topic_questions["accuracy"] < 0.85])
+                st.caption(f"📊 {len(topic_questions)} total | {weak_count} below 85% accuracy")
     
     st.markdown("---")
 
@@ -850,6 +1235,8 @@ try:
         st.session_state.get("focus_topic"),
         st.session_state.get("focus_subtopic"),
         current_session_mode,
+        st.session_state.get("study_variant", "normal"),
+        st.session_state.get("study_deep_dive_topic"),
     )
 
     if st.session_state.get("session_key") != session_key or not st.session_state.get("session_qids"):
@@ -1148,6 +1535,10 @@ try:
 
     # Stage 1: Answer
     if st.session_state.step == "answer":
+        # Initialize timer for this question if not already started
+        if st.session_state.session_current_q_start_time is None:
+            st.session_state.session_current_q_start_time = datetime.now()
+        
         with question_box:
             header = f"Question {st.session_state.i + 1} of {len(qids)}"
             if has_notebook(current_qid, nbs_df):
@@ -1155,6 +1546,7 @@ try:
             if is_flashcard(current_qid, fc_df):
                 header += " 🃏"
             st.subheader(header)
+            
             meta_line = f"{q.get('Topic','')} → {q.get('Subtopic','')} | {q.get('Difficulty','')}"
             if show_qid:
                 meta_line = f"QID {current_qid} | " + meta_line
@@ -1181,6 +1573,7 @@ try:
                     st.session_state.i += 1
                     st.session_state.step = "answer"
                     st.session_state.review = None
+                    st.session_state.session_current_q_start_time = None  # Reset timer for next question
                     st.rerun()
                 st.stop()
 
@@ -1222,6 +1615,7 @@ try:
                 st.session_state.i += 1
                 st.session_state.step = "answer"
                 st.session_state.review = None
+                st.session_state.session_current_q_start_time = None  # Reset timer for next question
                 st.rerun()
 
             # Handle flagged submission (when flag button is clicked)
@@ -1247,11 +1641,23 @@ try:
                 st.session_state.i += 1
                 st.session_state.step = "answer"
                 st.session_state.review = None
+                st.session_state.session_current_q_start_time = None  # Reset timer for next question
                 st.rerun()
 
             if submitted:
                 correct_letter = q.get("CorrectLetter")
                 is_correct = (choice == correct_letter)
+                
+                # Calculate time spent on this question
+                time_on_q_sec = int((datetime.now() - st.session_state.session_current_q_start_time).total_seconds())
+                
+                # Warn if answered too quickly (only in Study Mode)
+                session_mode = st.session_state.get("session_mode", "study")
+                if session_mode == "study" and time_on_q_sec < 15:
+                    st.warning(f"⚡ **You answered in {time_on_q_sec}s!** Take your time to read carefully. Aim for 30+ seconds.", icon="🚨")
+                    st.caption("You can click the Submit button again when you're ready, or change your answer.")
+                    # Don't proceed yet - let them re-read
+                    st.stop()
 
                 # Track time spent on this question (for timed modes)
                 if is_timed and st.session_state.session_time_started:
@@ -1259,7 +1665,7 @@ try:
                     time_on_q = elapsed - sum(st.session_state.session_question_times.get(qid, 0) for qid in st.session_state.session_question_times)
                     st.session_state.session_question_times[current_qid] = time_on_q
                 else:
-                    time_on_q = 0
+                    time_on_q = time_on_q_sec
 
                 record_attempt(current_qid, choice, is_correct, time_spent=time_on_q)
 
@@ -1403,6 +1809,7 @@ try:
                     st.session_state.i += 1
                     st.session_state.step = "answer"
                     st.session_state.review = None
+                    st.session_state.session_current_q_start_time = None  # Reset timer for next question
                     st.rerun()
             with c2:
                 if st.button("Skip"):
@@ -1414,6 +1821,7 @@ try:
                     st.session_state.i += 1
                     st.session_state.step = "answer"
                     st.session_state.review = None
+                    st.session_state.session_current_q_start_time = None  # Reset timer for next question
                     st.rerun()
             with c3:
                 # For flagged review mode, show "Done reviewing" button
@@ -1434,9 +1842,7 @@ try:
                     st.session_state.nav_request = "Weakness Dashboard"
                     st.rerun()
 
-    if show_debug:
-        st.subheader("Debug: session qids")
-        st.write(qids)
+
 
 except Exception as e:
     st.error("❌ App crashed. Here’s the error:")

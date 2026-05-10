@@ -74,3 +74,38 @@ Custom templates allow dynamic values (like the KPI number) to be included in th
 Hook:
 
 If they want the number → Custom template"
+1779,2026-04-24 22:05:40.688358,"A data engineer is designing a Delta Live Tables pipeline. The source system generates files containing changes captured in the source data. Each change event has metadata indicating whether the specified record was inserted, updated, or deleted. In addition to a timestamp column indicating the order in which the changes happened. The data engineer needs to update a target table based on these change events. Which of the following commands can the data engineer use to best solve this problem?",B: APPLY CHANGES INTO
+1781,2026-04-27 13:40:07.995771,Create IDF Sumtax,D: CREATE FUNCTION plus_one(value INTEGER)RETURNS INTEGERRETURN value +1;
+1784,2026-04-27 13:54:51.780928,"Given the following table faculties, Fill in the below blank to get the students enrolled in less than 3 courses from the array column studtents
+SELECT
+faculty_id,
+students,
+_____ AS few_courses_students
+FROM faculties","D: FILTER (students, i -> i.total_courses < 3)"
+1398,2026-05-04 11:54:50.320938,Which of the following operations is not supported with streaming dataframe view? ( spark.readStream .table(“recordings_bronze“) .createOrReplaceTempView(“recordings_tmp_vw“) ),E: SELECT * FROM recordings_tmp_vw ORDER BY device_id
+1661,2026-05-04 11:55:52.106664,"A data engineer is helping a finance analytics team manage costs in their Databricks SQL environment. The team often runs reports during the day but frequently forgets to shut down the SQL warehouse afterward, leading to unnecessary charges. Which configuration should the data engineer apply to automatically shut down the SQL warehouse after it has been idle for a specified period?",E: Auto-Stop
+1005,2026-05-05 20:36:24.617075,"A junior data engineer has created a global temporary view called orders_vw to do some task. He is trying to run the following query on the view.
+SELECT * FROM orders_vw
+But, he is getting an error. As a senior data engineer, what correction you will suggest to your colleague in order to run this query?",B: SELECT * FROM global_temp.orders_vw
+1025,2026-05-05 22:19:11.748150,"As a data engineer, you are working on a task to load external CSV files into a Delta table using the COPY INTO command given below.
+COPY INTO my_table
+FROM ‘/path/to/files‘
+FILEFORMAT = CSV
+After running the command once, the schema of the incoming data has changed in one of the files due to addition of a new column and data load got failed. Which of the following SQL commands will help you to overcome this issue?","B: COPY INTO my_table
+FROM ‘/path/to/files‘
+FILEFORMAT = CSV
+FORMAT_OPTIONS (‘mergeSchema‘ = ‘true‘)
+COPY_OPTIONS (‘mergeSchema‘ = ‘true‘);"
+1462,2026-05-06 16:51:11.482884,What is the first level of object hierarchy that is used to reference data by three-level namespace in the Unity Catalog?,C: Catalog
+1007,2026-05-06 17:01:43.785720,"You have to create a delta table players which contains the following columns:
+playerId      playerName      playerRuns
+      1                       Virat                23726
+      2                     Yuvraj               11778
+    . . . .                    . . . .                   . . . .
+Which of the following SQL DDL commands is used to create an empty Delta table in the above format only if a table does not already exists with this name?","B: CREATE TABLE IF NOT EXISTS players
+(
+playerId INT,
+playerName STRING,
+playerRuns LONG
+);"
+1210,2026-05-06 17:04:02.129945,"A data engineer needs to update an existing Delta table with fresh data from a recent batch process. The new data should replace all existing records in the table to ensure that only the most current data is available for analysis. The engineer wants to accomplish this in a single operation to maintain efficiency. Which SQL command should the data engineer use to update the table with the new data, replacing all old records?",B: INSERT OVERWRITE

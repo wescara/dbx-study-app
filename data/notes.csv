@@ -100,16 +100,21 @@ Liquid Clustering = adjust over time"
 1621,2026-04-17 17:38:33.979801,"The question wants the basics — sum, max, count — grouped by Store. Option B does exactly that, nothing fancy.
 D is the ""distracted"" option — it looks right (groups by Store) but gets distracted and wanders off into avg and countDistinct, which nobody asked for.
 So when you see an aggregation question: check the group-by column first, then verify every aggregation matches exactly what's asked. D fails the second check."
-1253,2026-04-24 20:15:03.268307,"%sql
--- Working equivalent of what the exam CLAIMS Option D does:
--- Step 1: COLLECT_LIST(items) → [[1,100,200,300], [1,250,300]]
--- Step 2: AGGREGATE folds ARRAY_UNION across the collected arrays
--- Step 3: Result: [1, 100, 200, 300, 250]
-SELECT cartId, 
-  AGGREGATE(
-    COLLECT_LIST(items), 
-    CAST(ARRAY() AS ARRAY<INT>), 
-    (acc, x) -> ARRAY_UNION(acc, x)
-  ) AS items
-FROM carts
-GROUP BY cartId"
+1779,2026-04-24 22:05:23.269633,"Your problem statement is classic CDC (Change Data Capture):
+
+- source files contain row-level change events
+- each event includes an operation flag (insert/update/delete)
+- and a timestamp/sequence that defines the order of changes
+- you need to apply those events to keep a target table current"
+1773,2026-04-27 11:26:30.168146,Parquet and JSON ---> NOT XML <---
+1827,2026-04-28 16:11:32.545475,USING org.apache.spark.sql.jdbc
+1830,2026-04-28 16:14:02.037117,"use ""def"" to define a function."
+1462,2026-05-06 16:51:39.013323,catalog.schema.table
+1253,2026-05-09 21:06:18.046290,"Think of it like envelopes — 
+collect_set groups the envelopes and removes any duplicate envelopes,  but array_union is what actually opens them and combines the contents."
+1569,2026-05-09 21:33:18.078167,"The way to remember it going forward:
+
+Repair Run = skip the stuff that already worked
+
+If there's only one task, nothing already worked, so there's nothing to skip. Run Now is equivalent but simpler.
+Tricky question though — the exam is specifically testing whether you know that Repair Run distinction. Don't be too hard on yourself on that one."

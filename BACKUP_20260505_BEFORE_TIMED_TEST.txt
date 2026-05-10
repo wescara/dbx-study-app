@@ -1,0 +1,34 @@
+================================================================================
+BACKUP SNAPSHOT - Before Timed Test Feature Implementation
+Date: May 5, 2026
+Git Repo: https://github.com/wescara/dbx-study-app.git
+Main Branch: origin/main
+================================================================================
+
+WHAT'S BEING IMPLEMENTED:
+- Exam Simulation Mode (45Q × 90 min)
+- Speed Drill Mode (10-15Q × 15-25 min)
+- Live timer display with pace tracking
+- Flagged questions review feature
+- Time-per-question tracking
+- Enhanced session summary with time analytics
+
+FILES TO BE MODIFIED:
+1. app.py - Main Streamlit app (add timer UI, new modes, session logic)
+2. study_engine.py - Add timer helper functions
+
+FILES TO BE CREATED:
+1. timed_sessions.csv (new data persistence layer)
+
+CSV SCHEMA CHANGES:
+- attempts.csv: Add "time_spent" column
+
+GIT STATUS:
+If this backup was created, the current code has been committed to GitHub.
+To restore to pre-implementation state, run:
+  git reset --hard origin/main
+
+IMPORTANT:
+All code changes are incremental and backward-compatible.
+The existing "Study Mode" and "Weakness Dashboard" remain unchanged.
+================================================================================
