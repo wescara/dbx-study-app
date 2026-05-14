@@ -793,6 +793,29 @@ else:
     st.sidebar.warning("⚠️ Exam is today or past!")
 st.sidebar.markdown("---")
 
+# Load data early to display today's progress at top of sidebar
+questions = load_questions(DATA_PATH, SHEET_NAME)
+questions = add_exam_weights(questions)  # Add exam weight column
+attempts = load_attempts()
+
+# Display today's progress card prominently at top of sidebar
+if not attempts.empty:
+    today = pd.Timestamp.now().normalize()
+    today_attempts = attempts[attempts["timestamp"] >= today]
+    today_count = len(today_attempts)
+    today_correct = int(today_attempts["correct"].sum()) if today_count > 0 else 0
+    today_missed = today_count - today_correct
+    today_acc = f"{today_correct / today_count:.0%}" if today_count > 0 else "–"
+    
+    # Today's Progress card
+    progress_html = f"<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 5px 0; font-size: 28px; font-weight: bold; color: #4FACFE;'>{today_count}</p><p style='margin: 0 0 15px 0; font-size: 12px; color: #999;'>answered</p><div style='display: flex; justify-content: space-around; margin: 15px 0 0 0; padding-top: 15px; border-top: 1px solid rgba(79, 172, 254, 0.3);'><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #FF6B6B;'>{today_missed}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>missed</p></div><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #51CF66;'>{today_acc}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>accuracy</p></div></div></div>"
+    st.sidebar.markdown(progress_html, unsafe_allow_html=True)
+else:
+    no_attempts_html = "<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 0 0; font-size: 12px; color: #999;'>No attempts yet.</p></div>"
+    st.sidebar.markdown(no_attempts_html, unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
 # Sidebar navigation (do not mutate nav_mode after this widget exists)
 mode = st.sidebar.radio("Mode", ["Study Mode", "Weakness Dashboard", "Search"], key="nav_mode")
 
@@ -818,28 +841,6 @@ try:
         st.error("❌ Excel file not found.")
         st.info(r"Expected: C:\dbx-study-app\data\DBx_Questions.xlsx")
         st.stop()
-
-
-
-    questions = load_questions(DATA_PATH, SHEET_NAME)
-    questions = add_exam_weights(questions)  # Add exam weight column
-    attempts = load_attempts()
-
-    # Today's stats in sidebar
-    if not attempts.empty:
-        today = pd.Timestamp.now().normalize()
-        today_attempts = attempts[attempts["timestamp"] >= today]
-        today_count = len(today_attempts)
-        today_correct = int(today_attempts["correct"].sum()) if today_count > 0 else 0
-        today_missed = today_count - today_correct
-        today_acc = f"{today_correct / today_count:.0%}" if today_count > 0 else "–"
-        
-        # Today's Progress card
-        progress_html = f"<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 5px 0; font-size: 28px; font-weight: bold; color: #4FACFE;'>{today_count}</p><p style='margin: 0 0 15px 0; font-size: 12px; color: #999;'>answered</p><div style='display: flex; justify-content: space-around; margin: 15px 0 0 0; padding-top: 15px; border-top: 1px solid rgba(79, 172, 254, 0.3);'><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #FF6B6B;'>{today_missed}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>missed</p></div><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #51CF66;'>{today_acc}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>accuracy</p></div></div></div>"
-        st.sidebar.markdown(progress_html, unsafe_allow_html=True)
-    else:
-        no_attempts_html = "<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 0 0; font-size: 12px; color: #999;'>No attempts yet.</p></div>"
-        st.sidebar.markdown(no_attempts_html, unsafe_allow_html=True)
 
     st.success(f"✅ Loaded {len(questions)} questions from {SHEET_NAME}")
     st.caption(f"Attempts recorded: {len(attempts)} (stored in {ATTEMPTS_PATH})")
