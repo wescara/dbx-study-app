@@ -1746,45 +1746,52 @@ try:
                 st.rerun()
 
             if submitted:
-                correct_letter = q.get("CorrectLetter")
-                is_correct = (choice == correct_letter)
-                
-                # Calculate time spent on this question
-                time_on_q_sec = int((datetime.now() - st.session_state.session_current_q_start_time).total_seconds())
-                
-                # Warn if answered too quickly (only in Study Mode)
-                session_mode = st.session_state.get("session_mode", "study")
-                if session_mode == "study" and time_on_q_sec < 15:
-                    st.warning(f"⚡ **You answered in {time_on_q_sec}s!** Take your time to read carefully. Aim for 30+ seconds.", icon="🚨")
-                    st.caption("You can click the Submit button again when you're ready, or change your answer.")
-                    # Don't proceed yet - let them re-read
-                    st.stop()
+                try:
+                    correct_letter = q.get("CorrectLetter")
+                    is_correct = (choice == correct_letter)
+                    
+                    # Calculate time spent on this question (with safety check)
+                    if st.session_state.session_current_q_start_time is None:
+                        st.session_state.session_current_q_start_time = datetime.now()
+                    time_on_q_sec = int((datetime.now() - st.session_state.session_current_q_start_time).total_seconds())
+                    
+                    # Warn if answered too quickly (only in Study Mode)
+                    session_mode = st.session_state.get("session_mode", "study")
+                    if session_mode == "study" and time_on_q_sec < 15:
+                        st.warning(f"⚡ **You answered in {time_on_q_sec}s!** Take your time to read carefully. Aim for 30+ seconds.", icon="🚨")
+                        st.caption("You can click the Submit button again when you're ready, or change your answer.")
+                        # Don't proceed yet - let them re-read
+                        st.stop()
 
-                # Use correct per-question time (same calculation for all modes)
-                time_on_q = time_on_q_sec
-                
-                # Track time in session for timed modes
-                if is_timed:
-                    st.session_state.session_question_times[current_qid] = time_on_q
+                    # Use correct per-question time (same calculation for all modes)
+                    time_on_q = time_on_q_sec
+                    
+                    # Track time in session for timed modes
+                    if is_timed:
+                        st.session_state.session_question_times[current_qid] = time_on_q
 
-                record_attempt(current_qid, choice, is_correct, time_spent=time_on_q)
+                    record_attempt(current_qid, choice, is_correct, time_spent=time_on_q)
 
-                st.session_state.review = {
-                    "qid": current_qid,
-                    "choice": choice,
-                    "is_correct": is_correct,
-                    "correct_letter": correct_letter,
-                    "explanation": q.get("Explanation", "(No explanation provided.)"),
-                    "verification_notes": q.get("VerificationNotes", None),
-                    "topic": q.get("Topic", ""),
-                    "subtopic": q.get("Subtopic", ""),
-                    "difficulty": q.get("Difficulty", ""),
-                    "question": q.get("Question", ""),
-                    "options": options,
-                    "time_spent": time_on_q,
-                }
-                st.session_state.step = "review"
-                st.rerun()
+                    st.session_state.review = {
+                        "qid": current_qid,
+                        "choice": choice,
+                        "is_correct": is_correct,
+                        "correct_letter": correct_letter,
+                        "explanation": q.get("Explanation", "(No explanation provided.)"),
+                        "verification_notes": q.get("VerificationNotes", None),
+                        "topic": q.get("Topic", ""),
+                        "subtopic": q.get("Subtopic", ""),
+                        "difficulty": q.get("Difficulty", ""),
+                        "question": q.get("Question", ""),
+                        "options": options,
+                        "time_spent": time_on_q,
+                    }
+                    st.session_state.step = "review"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Error recording answer: {str(e)}")
+                    import traceback
+                    st.error(traceback.format_exc())
 
         with review_box:
             st.info("After you submit, feedback and explanation will appear here.")
