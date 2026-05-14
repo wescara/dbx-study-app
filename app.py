@@ -1341,11 +1341,20 @@ try:
     )
 
     if st.session_state.get("session_key") != session_key or not st.session_state.get("session_qids"):
+        # Preserve review state if it exists (don't reset mid-review!)
+        preserved_step = st.session_state.get("step")
+        preserved_review = st.session_state.get("review")
+        
         st.session_state.session_key = session_key
         st.session_state.session_attempts_start = len(attempts)
         # Use random selection for timed modes, priority-based for study mode
         use_random = current_session_mode in ["exam_mode", "speed_drill"]
         build_study_session(focused, num_questions, use_random=use_random)
+        
+        # Restore review state if we were reviewing (don't lose it!)
+        if preserved_step == "review" and preserved_review:
+            st.session_state.step = preserved_step
+            st.session_state.review = preserved_review
 
     # Handle jump-to-QID request
     jump_target = st.session_state.pop("jump_to_qid", None)
@@ -1786,13 +1795,6 @@ try:
                         "options": options,
                         "time_spent": time_on_q,
                     }
-                    
-                    # DEBUG before step change
-                    with st.expander("🐛 DEBUG: Before rerun"):
-                        st.write(f"Setting step to 'review'")
-                        st.write(f"Review qid: {st.session_state.review.get('qid')}")
-                        st.write(f"Is correct: {st.session_state.review.get('is_correct')}")
-                    
                     st.session_state.step = "review"
                     st.rerun()
                 except Exception as e:
@@ -1805,13 +1807,6 @@ try:
 
     # Stage 2: Review
     else:
-        with st.expander("🐛 DEBUG: Review State"):
-            st.write(f"step: {st.session_state.get('step')}")
-            st.write(f"review set: {st.session_state.review is not None}")
-            if st.session_state.review:
-                st.write(f"review keys: {list(st.session_state.review.keys())}")
-                st.write(f"review qid: {st.session_state.review.get('qid')}")
-        
         rv = st.session_state.review
         if not rv:
             st.session_state.step = "answer"
