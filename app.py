@@ -1341,9 +1341,10 @@ try:
     )
 
     if st.session_state.get("session_key") != session_key or not st.session_state.get("session_qids"):
-        # Preserve review state if it exists (don't reset mid-review!)
+        # Preserve session state during rebuild (don't lose position or review!)
         preserved_step = st.session_state.get("step")
         preserved_review = st.session_state.get("review")
+        preserved_i = st.session_state.get("i", 0)
         
         st.session_state.session_key = session_key
         st.session_state.session_attempts_start = len(attempts)
@@ -1351,10 +1352,14 @@ try:
         use_random = current_session_mode in ["exam_mode", "speed_drill"]
         build_study_session(focused, num_questions, use_random=use_random)
         
-        # Restore review state if we were reviewing (don't lose it!)
-        if preserved_step == "review" and preserved_review:
+        # Restore session state if we're actively in a session (don't reset mid-session!)
+        # Only reset if this is a fresh session start
+        if preserved_step or preserved_review:
             st.session_state.step = preserved_step
             st.session_state.review = preserved_review
+            # Keep position if we're navigating (i > 0 means we're past the first question)
+            if preserved_i > 0:
+                st.session_state.i = min(preserved_i, len(st.session_state.session_qids) - 1)
 
     # Handle jump-to-QID request
     jump_target = st.session_state.pop("jump_to_qid", None)
