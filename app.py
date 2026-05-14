@@ -282,6 +282,70 @@ def load_questions(xlsx_path: str, sheet_name: str) -> pd.DataFrame:
     return df
 
 
+# =============================
+# Exam Weight Mapping (May 2026)
+# =============================
+EXAM_WEIGHTS = {
+    # Development and Ingestion (30%)
+    "Ingestion": 0.30,
+    "Auto Loader": 0.30,
+    "Streaming": 0.30,
+    "COPY INTO": 0.30,
+    
+    # Data Processing & Transformations (31%)
+    "SQL": 0.31,
+    "Spark SQL": 0.31,
+    "DataFrame": 0.31,
+    "Array Functions": 0.31,
+    "Transformations": 0.31,
+    "Aggregations": 0.31,
+    "Joins": 0.31,
+    
+    # Productionizing Pipelines (18%)
+    "Workflows": 0.18,
+    "Delta Live Tables": 0.18,
+    "DLT": 0.18,
+    "Jobs": 0.18,
+    "Scheduling": 0.18,
+    "Orchestration": 0.18,
+    "OPTIMIZE": 0.18,
+    "Performance": 0.18,
+    
+    # Data Governance & Quality (11%)
+    "Unity Catalog": 0.11,
+    "Governance": 0.11,
+    "Access Control": 0.11,
+    "Security": 0.11,
+    "Data Quality": 0.11,
+    "RBAC": 0.11,
+    
+    # Databricks Intelligence Platform (10%)
+    "Lakehouse": 0.10,
+    "Architecture": 0.10,
+    "Workspace": 0.10,
+}
+
+def get_exam_weight(topic: str, subtopic: str = None) -> float:
+    """Get exam weight for a topic/subtopic. Default 0.15 if not explicitly mapped."""
+    # Check subtopic first (more specific)
+    if subtopic and subtopic in EXAM_WEIGHTS:
+        return EXAM_WEIGHTS[subtopic]
+    # Fall back to topic
+    if topic in EXAM_WEIGHTS:
+        return EXAM_WEIGHTS[topic]
+    # Default weight if not found
+    return 0.15
+
+def add_exam_weights(df: pd.DataFrame) -> pd.DataFrame:
+    """Add exam weight column to questions DataFrame."""
+    df = df.copy()
+    df["ExamWeight"] = df.apply(
+        lambda row: get_exam_weight(row.get("Topic", ""), row.get("Subtopic", "")),
+        axis=1
+    )
+    return df
+
+
 def add_performance(questions: pd.DataFrame, attempts: pd.DataFrame) -> pd.DataFrame:
     q = questions.copy()
     if attempts.empty:
@@ -758,6 +822,7 @@ try:
 
 
     questions = load_questions(DATA_PATH, SHEET_NAME)
+    questions = add_exam_weights(questions)  # Add exam weight column
     attempts = load_attempts()
 
     # Today's stats in sidebar
@@ -768,13 +833,13 @@ try:
         today_correct = int(today_attempts["correct"].sum()) if today_count > 0 else 0
         today_missed = today_count - today_correct
         today_acc = f"{today_correct / today_count:.0%}" if today_count > 0 else "–"
-        st.sidebar.markdown("### Today's Progress")
-        st.sidebar.metric("Answered today", today_count)
-        st.sidebar.metric("Missed today", today_missed)
-        st.sidebar.metric("Today's accuracy", today_acc)
+        
+        # Today's Progress card
+        progress_html = f"<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 5px 0; font-size: 28px; font-weight: bold; color: #4FACFE;'>{today_count}</p><p style='margin: 0 0 15px 0; font-size: 12px; color: #999;'>answered</p><div style='display: flex; justify-content: space-around; margin: 15px 0 0 0; padding-top: 15px; border-top: 1px solid rgba(79, 172, 254, 0.3);'><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #FF6B6B;'>{today_missed}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>missed</p></div><div><p style='margin: 0; font-size: 18px; font-weight: bold; color: #51CF66;'>{today_acc}</p><p style='margin: 3px 0 0 0; font-size: 11px; color: #999;'>accuracy</p></div></div></div>"
+        st.sidebar.markdown(progress_html, unsafe_allow_html=True)
     else:
-        st.sidebar.markdown("### Today's Progress")
-        st.sidebar.caption("No attempts yet.")
+        no_attempts_html = "<div style='text-align: center; padding: 20px; background-color: rgba(79, 172, 254, 0.2); border-radius: 10px; border: 2px solid #4FACFE;'><p style='margin: 0; font-size: 14px; color: #999;'>📊 TODAY'S PROGRESS</p><p style='margin: 15px 0 0 0; font-size: 12px; color: #999;'>No attempts yet.</p></div>"
+        st.sidebar.markdown(no_attempts_html, unsafe_allow_html=True)
 
     st.success(f"✅ Loaded {len(questions)} questions from {SHEET_NAME}")
     st.caption(f"Attempts recorded: {len(attempts)} (stored in {ATTEMPTS_PATH})")
@@ -811,6 +876,14 @@ try:
             st.info("🎯 Active focus: Flagged for Review")
         else:
             st.caption("No active focus filter — studying general pool.")
+        
+        # Exam weight info
+        st.info(
+            "📚 **New for May 2026 Exam:** Topics are now weighted by exam importance. "
+            "**Priority Score** = (100% - Your Accuracy) × Exam Weight. "
+            "Focus on high-priority topics first to maximize exam points! "
+            "**Weights:** Development/Ingestion 30% • Data Processing 31% • Pipelines 18% • Governance 11% • Platform 10%"
+        )
 
         attempted = stats[stats["attempts"] > 0].copy()
         if attempted.empty:
@@ -859,38 +932,66 @@ try:
 
         st.markdown("---")
 
-        # Weakest Topics
-        st.subheader("🔴 Weakest Topics")
+        # Weakest Topics (sorted by priority: impact on exam score)
+        st.subheader("🎯 Weakest Topics (by Exam Priority)")
         topic_weak = (
             attempted.groupby("Topic")
-            .agg(questions=("QID", "count"), avg_accuracy=("accuracy", "mean"))
-            .sort_values("avg_accuracy")
+            .agg(
+                questions=("QID", "count"),
+                avg_accuracy=("accuracy", "mean"),
+                exam_weight=("ExamWeight", "mean")
+            )
             .reset_index()
         )
+        topic_weak["priority_score"] = (1 - topic_weak["avg_accuracy"]) * topic_weak["exam_weight"] * 100
+        topic_weak = topic_weak.sort_values("priority_score", ascending=False)
+        topic_weak["avg_accuracy"] = topic_weak["avg_accuracy"].apply(lambda x: f"{x:.1%}")
+        topic_weak["exam_weight"] = topic_weak["exam_weight"].apply(lambda x: f"{x:.0%}")
+        topic_weak["priority_score"] = topic_weak["priority_score"].apply(lambda x: f"{x:.1f}")
         st.dataframe(topic_weak, width='stretch')
 
-        # Weakest Subtopics
-        st.subheader("🔴 Weakest Subtopics (Top 15)")
+        # Weakest Subtopics (sorted by priority)
+        st.subheader("🔴 Weakest Subtopics (by Exam Priority, Top 15)")
         subtopic_weak = (
             attempted.groupby(["Topic", "Subtopic"])
-            .agg(questions=("QID", "count"), avg_accuracy=("accuracy", "mean"))
-            .sort_values("avg_accuracy")
+            .agg(
+                questions=("QID", "count"),
+                avg_accuracy=("accuracy", "mean"),
+                exam_weight=("ExamWeight", "mean")
+            )
             .reset_index()
         )
+        subtopic_weak["priority_score"] = (1 - subtopic_weak["avg_accuracy"]) * subtopic_weak["exam_weight"] * 100
+        subtopic_weak = subtopic_weak.sort_values("priority_score", ascending=False)
+        subtopic_weak["avg_accuracy"] = subtopic_weak["avg_accuracy"].apply(lambda x: f"{x:.1%}")
+        subtopic_weak["exam_weight"] = subtopic_weak["exam_weight"].apply(lambda x: f"{x:.0%}")
+        subtopic_weak["priority_score"] = subtopic_weak["priority_score"].apply(lambda x: f"{x:.1f}")
         st.dataframe(subtopic_weak.head(15), width='stretch')
 
-        # High-risk questions
-        st.subheader("🔥 High‑Risk Questions (Medium/Hard + <60% accuracy)")
+        # High-risk questions (prioritized by exam weight)
+        st.subheader("🔥 High‑Risk Questions (Medium/Hard + <60% accuracy, by Exam Impact)")
         high_risk = attempted[
             (attempted["Difficulty"].isin(["Medium", "Hard"])) &
             (attempted["accuracy"] < 0.6)
-        ].copy().sort_values(["accuracy", "attempts"], ascending=[True, False])
-
+        ].copy()
+        
+        # Calculate priority: (1 - accuracy) * exam_weight
+        high_risk["priority"] = (1 - high_risk["accuracy"]) * high_risk["ExamWeight"]
+        high_risk = high_risk.sort_values("priority", ascending=False)
+        
         notes_df = load_notes()
         high_risk["Note"] = high_risk["QID"].apply(lambda x: get_note_for_qid(x, notes_df))
-        cols = ["QID", "Topic", "Subtopic", "Difficulty", "attempts", "accuracy", "priority", "Note"]
-        cols = [c for c in cols if c in high_risk.columns]
-        st.dataframe(high_risk[cols].head(25), width='stretch')
+        
+        # Format display columns
+        display_cols = ["QID", "Topic", "Subtopic", "Difficulty", "attempts", "accuracy", "ExamWeight", "priority", "Note"]
+        display_cols = [c for c in display_cols if c in high_risk.columns]
+        
+        high_risk_display = high_risk[display_cols].head(25).copy()
+        high_risk_display["accuracy"] = high_risk_display["accuracy"].apply(lambda x: f"{x:.1%}")
+        high_risk_display["ExamWeight"] = high_risk_display["ExamWeight"].apply(lambda x: f"{x:.0%}")
+        high_risk_display["priority"] = high_risk_display["priority"].apply(lambda x: f"{x:.3f}")
+        
+        st.dataframe(high_risk_display, width='stretch')
 
         # Progress Over Time
         st.subheader("📈 Progress Over Time")
@@ -1659,13 +1760,12 @@ try:
                     # Don't proceed yet - let them re-read
                     st.stop()
 
-                # Track time spent on this question (for timed modes)
-                if is_timed and st.session_state.session_time_started:
-                    elapsed = int((datetime.now() - st.session_state.session_time_started).total_seconds())
-                    time_on_q = elapsed - sum(st.session_state.session_question_times.get(qid, 0) for qid in st.session_state.session_question_times)
+                # Use correct per-question time (same calculation for all modes)
+                time_on_q = time_on_q_sec
+                
+                # Track time in session for timed modes
+                if is_timed:
                     st.session_state.session_question_times[current_qid] = time_on_q
-                else:
-                    time_on_q = time_on_q_sec
 
                 record_attempt(current_qid, choice, is_correct, time_spent=time_on_q)
 

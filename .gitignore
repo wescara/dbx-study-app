@@ -1,0 +1,46 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (personal/sensitive)
+data/attempts.csv
+data/attempts_backup*.csv
+data/DBx_Questions.xlsx
+data/DBx_Questions.backup*.xlsx
+data/flashcards.csv
+data/flashcards.csv.tmp
+data/notebooks.csv
+data/notes.csv
+data/session_flagged.csv
+data/excluded_qids.txt
+data/UDQuestionsAnswers.txt
+data/Archive/
+data/*.pyc
+data/__pycache__/
+data/~*.xlsx
+
+# Temporary files
+*.tmp
+*.bak
+*.xlsx~
