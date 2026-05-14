@@ -1755,9 +1755,9 @@ try:
                         st.session_state.session_current_q_start_time = datetime.now()
                     time_on_q_sec = int((datetime.now() - st.session_state.session_current_q_start_time).total_seconds())
                     
-                    # Warn if answered too quickly (only in Study Mode)
+                    # Warn if answered too quickly (only in timed modes, not study/deep dive)
                     session_mode = st.session_state.get("session_mode", "study")
-                    if session_mode == "study" and time_on_q_sec < 15:
+                    if session_mode in ["exam_mode", "speed_drill"] and time_on_q_sec < 15:
                         st.warning(f"⚡ **You answered in {time_on_q_sec}s!** Take your time to read carefully. Aim for 30+ seconds.", icon="🚨")
                         st.caption("You can click the Submit button again when you're ready, or change your answer.")
                         # Don't proceed yet - let them re-read
