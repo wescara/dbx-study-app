@@ -1289,21 +1289,58 @@ try:
             variant_label = ("✓ " if current_variant == "deep_dive" else "") + "🎯 Topic Deep Dive"
             if st.button(variant_label, use_container_width=True, key="btn_variant_deep_dive"):
                 st.session_state.study_variant = "deep_dive"
+                st.session_state.study_deep_dive_topic = None  # Reset topic to force new selection
+                st.session_state.pop("deep_dive_topic_select", None)  # Clear selectbox cache
                 st.session_state.session_key = None
                 st.rerun()
         
         # Topic selector for Deep Dive mode
         if current_variant == "deep_dive":
-            topics = sorted(stats["Topic"].unique())
-            selected_topic = st.selectbox(
-                "Select topic to deep dive:",
-                options=topics,
-                key="deep_dive_topic_select"
-            )
-            if selected_topic:
-                st.session_state.study_deep_dive_topic = selected_topic
-                st.session_state.session_key = None
-                topic_questions = stats[stats["Topic"] == selected_topic]
+            # Sort topics by average accuracy (weakest first = lowest accuracy)
+            topic_stats = stats.groupby("Topic").agg({
+                "accuracy": "mean",
+                "attempts": "sum"
+            }).reset_index().sort_values("accuracy", ascending=True)
+            topics = topic_stats["Topic"].tolist()
+            
+            # Create display names with accuracy indicators
+            topic_display = {}
+            for _, row in topic_stats.iterrows():
+                t = row["Topic"]
+                acc = row["accuracy"]
+                topic_display[t] = f"{t} ({acc:.0%})"
+            
+            # If no topic selected, show placeholder and default to index 0
+            if not st.session_state.get("study_deep_dive_topic"):
+                selected_topic = st.selectbox(
+                    "Select topic to deep dive:",
+                    options=[None] + topics,
+                    format_func=lambda x: "— Choose a topic —" if x is None else topic_display[x],
+                    key="deep_dive_topic_select"
+                )
+                if selected_topic:
+                    st.session_state.study_deep_dive_topic = selected_topic
+                    st.session_state.session_key = None
+                    st.rerun()
+            else:
+                # Topic already selected, show it in selectbox
+                selected_topic = st.session_state.get("study_deep_dive_topic")
+                current_index = topics.index(selected_topic) if selected_topic in topics else 0
+                selected_topic = st.selectbox(
+                    "Select topic to deep dive:",
+                    options=topics,
+                    index=current_index,
+                    format_func=lambda x: topic_display[x],
+                    key="deep_dive_topic_select"
+                )
+                if selected_topic != st.session_state.get("study_deep_dive_topic"):
+                    st.session_state.study_deep_dive_topic = selected_topic
+                    st.session_state.session_key = None
+                    st.rerun()
+            
+            # Display topic stats
+            if st.session_state.get("study_deep_dive_topic"):
+                topic_questions = stats[stats["Topic"] == st.session_state.get("study_deep_dive_topic")]
                 weak_count = len(topic_questions[topic_questions["accuracy"] < 0.85])
                 st.caption(f"📊 {len(topic_questions)} total | {weak_count} below 85% accuracy")
     
