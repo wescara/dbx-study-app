@@ -1786,6 +1786,13 @@ try:
                         "options": options,
                         "time_spent": time_on_q,
                     }
+                    
+                    # DEBUG before step change
+                    with st.expander("🐛 DEBUG: Before rerun"):
+                        st.write(f"Setting step to 'review'")
+                        st.write(f"Review qid: {st.session_state.review.get('qid')}")
+                        st.write(f"Is correct: {st.session_state.review.get('is_correct')}")
+                    
                     st.session_state.step = "review"
                     st.rerun()
                 except Exception as e:
@@ -1798,6 +1805,13 @@ try:
 
     # Stage 2: Review
     else:
+        with st.expander("🐛 DEBUG: Review State"):
+            st.write(f"step: {st.session_state.get('step')}")
+            st.write(f"review set: {st.session_state.review is not None}")
+            if st.session_state.review:
+                st.write(f"review keys: {list(st.session_state.review.keys())}")
+                st.write(f"review qid: {st.session_state.review.get('qid')}")
+        
         rv = st.session_state.review
         if not rv:
             st.session_state.step = "answer"
