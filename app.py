@@ -286,6 +286,13 @@ def load_questions(xlsx_path: str, sheet_name: str) -> pd.DataFrame:
 # Exam Weight Mapping (May 2026)
 # =============================
 EXAM_WEIGHTS = {
+    # Topic-level weights (fallback for subtopics not explicitly listed)
+    "Development and Ingestion": 0.30,
+    "Data Processing & Transformations": 0.31,
+    "Productionizing Pipelines": 0.18,
+    "Data Governance & Quality": 0.11,
+    "Databricks Intelligence Platform": 0.10,
+    
     # Development and Ingestion (30%)
     "Ingestion": 0.30,
     "Auto Loader": 0.30,
@@ -385,8 +392,20 @@ def compute_priority(df: pd.DataFrame) -> pd.DataFrame:
         work["stale_w"] = (days_since.fillna(180) / 90).clip(upper=1.5)
     else:
         work["stale_w"] = 0
-    # ROI-ish: low accuracy + harder + flagged-for-review + staleness boost
-    work["priority"] = (1 - work["accuracy"]) * 2 + work["diff_w"] + work["flag_w"] + work["stale_w"]
+    # Recently added boost: new questions get priority for first 7 days (max 2.0x boost)
+    if "DateAdded" in work.columns:
+        now = pd.Timestamp.now()
+        work["date_added"] = pd.to_datetime(work["DateAdded"], errors="coerce")
+        days_since_added = (now - work["date_added"]).dt.total_seconds() / 86400
+        # Linear decay: full boost for 0 days, zero boost after 7 days
+        work["new_boost"] = (1 - (days_since_added / 7).clip(0, 1)) * 2.0
+    else:
+        work["new_boost"] = 0
+    # Boost for previously-missed questions (exactly 1 incorrect from master table): 3.0x boost for high-ROI review
+    work["previously_missed"] = work.get("IncorrectCount", 0).fillna(0) == 1
+    work["missed_boost"] = work["previously_missed"].astype(float) * 3.0
+    # ROI-ish: low accuracy + harder + flagged-for-review + staleness boost + newly added boost + missed boost
+    work["priority"] = (1 - work["accuracy"]) * 2 + work["diff_w"] + work["flag_w"] + work["stale_w"] + work["new_boost"] + work["missed_boost"]
     return work
 
 
@@ -409,8 +428,9 @@ def reset_study_session():
     
     # Timed session state
     st.session_state.session_mode = "study"  # study | speed_drill | exam_mode
-    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random
+    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random | recent_misses
     st.session_state.study_deep_dive_topic = None
+    st.session_state.study_untouched_topic = None
     st.session_state.session_time_started = None
     st.session_state.session_time_limit = None
     st.session_state.session_time_ideal_pace = None
@@ -438,11 +458,35 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
     elif study_variant == "untouched":
         # Questions with 0 attempts
         work = df[df["attempts"] == 0].copy()
+        # Filter by topic if selected
+        topic = st.session_state.get("study_untouched_topic")
+        if topic:
+            work = work[work["Topic"] == topic]
         # Sort by difficulty (harder first) then by stale weight
         return work.sort_values(["Difficulty"], ascending=False, key=lambda x: x.map({"Hard": 0, "Medium": 1, "Easy": 2}) if x.name == "Difficulty" else x)
     
     elif study_variant == "random":
         # Will be handled in build_study_session with use_random=True
+        return df
+    
+    elif study_variant == "recent_misses":
+        # Questions answered incorrectly in the last 24 hours
+        import pandas as pd
+        now = pd.Timestamp.now()
+        cutoff = now - pd.Timedelta(hours=24)
+        
+        # Get all attempts data - need to load fresh to get latest
+        attempts_recent = load_attempts()
+        if not attempts_recent.empty:
+            attempts_recent['timestamp'] = pd.to_datetime(attempts_recent['timestamp'], format='mixed', errors='coerce')
+            recent_misses = attempts_recent[(attempts_recent['timestamp'] >= cutoff) & (attempts_recent['correct'] == False)]
+            missed_qids = set(recent_misses['QID'].unique())
+            work = df[df['QID'].isin(missed_qids)].copy()
+            # Sort by number of times missed (most missed first)
+            miss_counts = recent_misses.groupby('QID').size().to_dict()
+            work['miss_count'] = work['QID'].map(miss_counts)
+            work = work.sort_values('miss_count', ascending=False)
+            return work
         return df
     
     # Default: apply focus filters if any
@@ -778,7 +822,7 @@ if st.session_state.get("pending_jump_qid") is not None:
 # =============================
 # Streamlit UI
 # =============================
-st.set_page_config(page_title="Databricks Associate Engineer Study App", layout="wide")
+st.set_page_config(page_title="Databricks Associate Engineer Study App", layout="wide", page_icon="favicon_pass_exam.ico")
 st.title("Databricks Associate Engineer Study App")
 
 # Calculate days until exam
@@ -830,6 +874,8 @@ st.sidebar.markdown("### Jump to QID")
 jump_qid = st.sidebar.number_input("Enter QID:", min_value=0, value=0, step=1, key="jump_qid_input")
 if st.sidebar.button("Go", key="jump_qid_btn") and jump_qid > 0:
     st.session_state.jump_to_qid = int(jump_qid)
+    st.session_state.nav_request = "Study Mode"
+    st.rerun()
 
 with st.expander("Startup status", expanded=False):
     st.write("Working directory:", os.getcwd())
@@ -992,7 +1038,29 @@ try:
         high_risk_display["ExamWeight"] = high_risk_display["ExamWeight"].apply(lambda x: f"{x:.0%}")
         high_risk_display["priority"] = high_risk_display["priority"].apply(lambda x: f"{x:.3f}")
         
-        st.dataframe(high_risk_display, width='stretch')
+        # Display with clickable QID column
+        st.markdown("_Click on a QID to study that question_")
+        cols = st.columns([1.2, 2, 2, 1, 1, 1, 1, 1])
+        col_headers = ["QID", "Topic", "Subtopic", "Difficulty", "Attempts", "Accuracy", "Exam Weight", "Priority"]
+        for i, header in enumerate(col_headers):
+            cols[i].markdown(f"**{header}**")
+        
+        for _, row in high_risk_display.iterrows():
+            cols = st.columns([1.2, 2, 2, 1, 1, 1, 1, 1])
+            
+            # Make QID clickable
+            if cols[0].button(str(int(row["QID"])), key=f"qid_{row['QID']}_btn", use_container_width=True):
+                st.session_state.jump_to_qid = int(row["QID"])
+                st.session_state.nav_request = "Study Mode"
+                st.rerun()
+            
+            cols[1].write(row["Topic"])
+            cols[2].write(row["Subtopic"])
+            cols[3].write(row["Difficulty"])
+            cols[4].write(str(int(row["attempts"])))
+            cols[5].write(row["accuracy"])
+            cols[6].write(row["ExamWeight"])
+            cols[7].write(row["priority"])
 
         # Progress Over Time
         st.subheader("📈 Progress Over Time")
@@ -1276,10 +1344,19 @@ try:
             variant_label = ("✓ " if current_variant == "untouched" else "") + "🆕 Untouched (0 attempts)"
             if st.button(variant_label, use_container_width=True, key="btn_variant_untouched"):
                 st.session_state.study_variant = "untouched"
+                st.session_state.study_untouched_topic = None  # Reset topic to force new selection
+                st.session_state.pop("untouched_topic_select", None)  # Clear selectbox cache
                 st.session_state.session_key = None
                 st.rerun()
         
         with variant_col3:
+            variant_label = ("✓ " if current_variant == "recent_misses" else "") + "📕 Recent Misses"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_recent_misses"):
+                st.session_state.study_variant = "recent_misses"
+                st.session_state.session_key = None
+                st.rerun()
+        
+        with variant_col4:
             variant_label = ("✓ " if current_variant == "random" else "") + "🎲 Random"
             if st.button(variant_label, use_container_width=True, key="btn_variant_random"):
                 st.session_state.study_variant = "random"
@@ -1344,6 +1421,36 @@ try:
                 topic_questions = stats[stats["Topic"] == st.session_state.get("study_deep_dive_topic")]
                 weak_count = len(topic_questions[topic_questions["accuracy"] < 0.85])
                 st.caption(f"📊 {len(topic_questions)} total | {weak_count} below 85% accuracy")
+        
+        # Topic selector for Untouched mode
+        if current_variant == "untouched":
+            # Get untouched questions by topic
+            untouched = stats[stats["attempts"] == 0].copy()
+            untouched_by_topic = untouched.groupby("Topic")["QID"].count().sort_values(ascending=False)
+            topics = untouched_by_topic.index.tolist()
+            
+            # Create display names with count indicators
+            topic_display = {}
+            for t in topics:
+                count = untouched_by_topic[t]
+                topic_display[t] = f"{t} ({count} untouched)"
+            
+            # Always show the same selectbox structure
+            selected_topic = st.selectbox(
+                "Select topic to study (untouched questions):",
+                options=topics,
+                format_func=lambda x: topic_display[x],
+                key="untouched_topic_select"
+            )
+            if selected_topic != st.session_state.get("study_untouched_topic"):
+                st.session_state.study_untouched_topic = selected_topic
+                st.session_state.session_key = None
+                st.rerun()
+            
+            # Display topic stats
+            if selected_topic:
+                topic_untouched = untouched[untouched["Topic"] == selected_topic]
+                st.caption(f"🆕 {len(topic_untouched)} untouched questions in this topic")
     
     st.markdown("---")
 
@@ -1376,6 +1483,7 @@ try:
         current_session_mode,
         st.session_state.get("study_variant", "normal"),
         st.session_state.get("study_deep_dive_topic"),
+        st.session_state.get("study_untouched_topic"),
     )
 
     if st.session_state.get("session_key") != session_key or not st.session_state.get("session_qids"):
@@ -1383,6 +1491,23 @@ try:
         preserved_step = st.session_state.get("step")
         preserved_review = st.session_state.get("review")
         preserved_i = st.session_state.get("i", 0)
+        
+        # RESET all session state when topic changes in deep_dive or untouched mode
+        if st.session_state.get("study_variant") == "deep_dive":
+            # If session_key is None or the topic changed, do a full reset
+            old_key = st.session_state.get("session_key")
+            if old_key is None or (old_key and old_key[8] != session_key[8]):
+                preserved_i = 0  # Reset position
+                preserved_step = "answer"  # Reset to answer phase
+                preserved_review = None  # Clear review state
+        
+        elif st.session_state.get("study_variant") == "untouched":
+            # If session_key is None or the topic changed, do a full reset
+            old_key = st.session_state.get("session_key")
+            if old_key is None or (old_key and old_key[9] != session_key[9]):
+                preserved_i = 0  # Reset position
+                preserved_step = "answer"  # Reset to answer phase
+                preserved_review = None  # Clear review state
         
         st.session_state.session_key = session_key
         st.session_state.session_attempts_start = len(attempts)
@@ -1800,7 +1925,9 @@ try:
             if submitted:
                 try:
                     correct_letter = q.get("CorrectLetter")
-                    is_correct = (choice == correct_letter)
+                    # Handle multiple correct answers (comma-separated, e.g., "A,E")
+                    correct_letters = [x.strip() for x in str(correct_letter).split(',') if x.strip()]
+                    is_correct = choice in correct_letters
                     
                     # Calculate time spent on this question (with safety check)
                     if st.session_state.session_current_q_start_time is None:
@@ -1887,7 +2014,20 @@ try:
             if rv.get("is_correct"):
                 st.success("✅ Correct!")
             else:
-                st.error(f"❌ Incorrect — correct answer is **{rv.get('correct_letter')}**")
+                correct_letter = rv.get('correct_letter', '')
+                # Format multiple correct answers nicely (e.g., "A,E" → "A or E")
+                correct_letters = [x.strip() for x in str(correct_letter).split(',') if x.strip()]
+                if len(correct_letters) > 1:
+                    formatted_correct = " or ".join(correct_letters)
+                else:
+                    formatted_correct = correct_letter
+                st.error(f"❌ Incorrect — correct answer is **{formatted_correct}**")
+            
+            # Show indicator for multi-answer questions
+            correct_letter = rv.get('correct_letter', '')
+            correct_letters = [x.strip() for x in str(correct_letter).split(',') if x.strip()]
+            if len(correct_letters) > 1:
+                st.info(f"ℹ️ **This question has {len(correct_letters)} correct answers:** {', '.join(correct_letters)}")
 
             st.markdown("### Explanation")
             st.markdown(rv.get("explanation", "").replace("\n", "  \n"))

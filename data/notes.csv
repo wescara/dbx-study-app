@@ -118,3 +118,139 @@ Repair Run = skip the stuff that already worked
 
 If there's only one task, nothing already worked, so there's nothing to skip. Run Now is equivalent but simpler.
 Tricky question though — the exam is specifically testing whether you know that Repair Run distinction. Don't be too hard on yourself on that one."
+1016,2026-05-11 10:31:22.186841,%run ../misc/nb_set_global_variables
+1018,2026-05-11 10:37:20.618832,"A SQL endpoint has two scaling settings:
+Minimum clusters:  1
+Maximum clusters:  ?  ← this is the ""maximum bound""
+
+Think of it like checkout lanes at a grocery store:
+
+Cluster size = how big/fast each lane is
+Maximum bound = how many lanes you're allowed to open"
+1476,2026-05-11 10:45:18.205466,Trick Question
+1888,2026-05-13 15:44:52.045922,ABAC stands for Attribute-Based Access Control.
+1880,2026-05-13 19:20:00.424247,DAB
+1848,2026-05-13 19:52:36.478995,"many files over time -> Auto Loader
+simpler file loads -> COPY INTO"
+2000,2026-05-14 12:22:30.887974,All Done
+2043,2026-05-15 09:34:29.337153,MULTIPLE ANSWER - READ QUESTION
+1003,2026-05-15 20:29:59.032919,"""VACUUM only accepts HOURS as the retention unit. 7 days = 168 hours. Memorize this — the exam will offer 'DAYS', 'WEEKS', etc. as distractors. Always convert to hours."""
+1710,2026-05-15 21:54:16.042324,"""Retries = task-level config, not job-level. Each task has its own max_retries. 'Job retry' is a distractor — think granular. Same logic: timeouts can also be set at task level."""
+1422,2026-05-15 22:15:30.293118,trigger(availableNow=True) - NO underscores or quotes.
+1375,2026-05-18 13:12:17.992364,"Memory Hook: ""Text me the default""
+The answer is dbutils.widgets.**text**() — and the parameter order is: Name → Default → Label
+
+dbutils.widgets.text(""department"", ""all"", ""Department"")
+
+dbutils.widgets.text(name, defaultValue, label)
+
+name — the key you use to retrieve it with .get(""department"")
+defaultValue — what it falls back to if nothing is passed at runtime (""all"")
+label — just the display label shown in the notebook UI widget panel
+
+The label is optional in practice, but the exam shows it with all three. The label is purely cosmetic — it doesn't affect .get() at all.
+So the mental model is: one for code, one for fallback, one for humans."
+1380,2026-05-18 13:21:32.390481,"text
+Free-form input, single value
+
+dropdown
+Pick one from a fixed list
+
+combobox
+Pick from list or type your own
+
+multiselect
+Pick one or more from a list"
+1390,2026-05-18 13:24:13.371417,"assert is a statement, not a function."
+1398,2026-05-18 13:27:40.519150,"The rule: Streaming DataFrames don't support operations that require ordering across the entire dataset — because the data is infinite and never ""done.""
+
+A — simple SELECT ✅ fine
+B — GROUP BY with count ✅ fine (supported via windowing/watermarks)
+C — adding a column ✅ fine
+D — WHERE filter ✅ fine
+E — ORDER BY ❌ not supported — you can't sort a stream globally"
+1229,2026-05-18 13:38:31.871541,"Memory hook:
+
+""Lakehouse = yes to everything.""
+
+Any time an exam question asks why Lakehouse replaces both lakes and warehouses, and ""all of the above"" is an option — it's almost certainly E. The whole point of Lakehouse is that it's not one trick, it's the complete package.
+The trap is picking the one that sounds most distinctive (streaming+batch feels like the ""special"" Lakehouse feature), but the real answer is that no single feature replaces two systems — the combination does."
+1452,2026-05-18 13:41:04.929513,"Memory hook for E:
+
+""Small results phone home (control plane), big results stay in your house (customer storage).""
+
+Notebook results are split — the UI-rendered portion in the control plane, overflow/larger results in your own storage. Neither alone is the complete answer."
+1458,2026-05-18 13:46:18.154023,"Memory hook:
+""No trigger = hair trigger — 500ms.""
+
+500 milliseconds is half a second — Spark Structured Streaming is designed to be near real-time by default. It's not waiting around for 5 minutes."
+1521,2026-05-22 12:01:40.523846,Memory hook: Production = professional/cost-conscious → shuts everything down when done. Development = your laptop stays on while you're working.
+1381,2026-05-22 12:03:57.857462,"Quick elimination for test day:
+
+drop = SQL (DROP TABLE), not file system ops
+remove = doesn't exist in dbutils.fs
+mv = move, not delete
+delete = the obvious wrong answer trap
+rm = Unix brain wins ✅"
+1523,2026-05-22 12:06:21.269536,Don't haul the whole lake to fill a glass
+1377,2026-05-22 12:09:25.297421,"""TABLE, AS OF, quoted INTERVAL"" — three things you must have, all three are the traps:
+RESTORE TABLE ← not just RESTORE
+AS OF ← can't skip it
+INTERVAL '8' HOURS ← the 8 needs quotes"
+1607,2026-05-22 22:23:54.629828,"Yeah, 100% — and this is a good conceptual question, not just syntax.
+The key insight you missed:
+Spark is a distributed execution engine. Breakpoints (D) and variable watchers (A) are single-process debugger concepts — they don't work when your code is running across a cluster of executors. There's no single place to ""pause and inspect.""
+Why B is the only practical answer:
+
+df.printSchema() — shows column names and types
+print(df.dtypes) — returns a list of (column, type) tuples
+These run on the driver, before the distributed job fans out
+
+Memory hook: ""Spark doesn't pause — it prints""
+Any exam question about debugging Spark jobs → think logging and schema inspection, not IDE-style debugging tools. Breakpoints, variable watchers, step-through debuggers = single machine concepts that don't translate to distributed systems.
+Quick elimination for similar questions:
+
+Variable watcher → ❌ single process only
+Breakpoint → ❌ distributed, nothing to pause
+Spark UI → ❌ good for performance/DAG, not runtime data types
+Print/log schema → ✅ always works, runs on driver
+
+This one's worth locking in because the underlying concept (distributed = no breakpoints) will show up in other forms on the exam."
+1586,2026-05-22 22:26:09.471344,"The keyword map for this exam:
+
+""cloud object storage"" + ""incremental"" + ""idempotent"" → Auto Loader
+""pipeline orchestration"" + ""data quality expectations"" + ""Bronze/Silver/Gold"" → Delta Live Tables
+""SQL queries"" + ""dashboards"" → Databricks SQL
+""ML tracking"" + ""experiments"" → MLflow
+
+Memory hook: Auto Loader is the truck that hauls files from cloud storage. DLT is the warehouse management system that orchestrates what happens after. The question asked for the truck."
+1149,2026-05-22 22:31:40.050449,"Burn in these DLT ""yes it supports that"" facts for the exam:
+
+✅ Mixed Python + SQL
+✅ Streaming + batch in same pipeline
+✅ Medallion / multi-hop architecture
+✅ Data quality expectations
+✅ Auto scaling and error handling"
+1654,2026-05-22 22:35:33.833037,"Memory hook: ""Spark tells you what happened in the logs, not in a debugger."""
+1697,2026-05-22 22:36:58.048307,"Memory hook: ""The format is the protocol, not the database""
+JDBC is the protocol. SQLite/MySQL/Postgres are the databases. You tell Spark the protocol (""jdbc""), and the URL tells it which database. Same pattern every time regardless of the database."
+1543,2026-05-22 22:38:51.459028,"Memory hook: ""fail = failOnNewColumn, add = addNewColumns, rescue = rescue"""
+1759,2026-05-22 22:51:04.915132,"Memory hook: ""Star counts all, column counts real""
+COUNT(*) = every row. COUNT(col) = only rows where col exists (not null).
+Burn in the NULL comparison rule while you're here:
+
+You can NEVER compare NULL with =, !=, <>, >, < — always returns UNKNOWN, never TRUE
+Only valid NULL checks: IS NULL and IS NOT NULL. Full stop.
+Watch for ""select two"" questions on the exam — they'll often pair an obvious correct answer (A) with a subtle one (D) that tests whether you know the implicit behavior of a function. When you see select-two, always ask yourself if there's a function-based answer hiding alongside the explicit filter answer."
+1005,2026-05-22 22:54:33.138526,"Memory hook: ""global_temp is short, like a temp view should be""
+The word temporary gets abbreviated to temp everywhere in Databricks — TEMP VIEW, global_temp schema. If you're ever tempted to spell it out fully, don't."
+1704,2026-05-22 23:01:56.358441,"Memory hook: ""Open door for outsiders, Databricks door for insiders""
+No Databricks account → Open Sharing (they get a credential file to connect from any compatible tool)
+Has Databricks → Databricks-to-Databricks sharing
+The credential file detail is worth knowing too — Open Sharing works by giving the recipient a bearer token/credential file they plug into Tableau or whatever BI tool they use. No Databricks login required."
+1713,2026-05-22 23:04:02.463913,"The platform constraint worth knowing:
+Databricks only allows one metastore per region per account. So one-per-workspace (E) isn't even possible — metastores are account-scoped, not workspace-scoped.
+How to organize within a region:
+Use catalogs to separate business units, teams, or environments inside a regional metastore. That's what A describes — it's good practice within a region, just doesn't solve the multi-region problem.
+Memory hook: ""One metastore per region, one catalog per team""
+Region → metastore. Business unit → catalog. Those are the two org levels to keep straight."

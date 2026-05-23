@@ -42,7 +42,17 @@ def compute_stats(questions, attempts):
     out = questions.merge(stats, on="QID", how="left")
     return out.fillna({"attempts": 0, "correct": 0, "accuracy": 0.0})
 
-def select_daily_questions(df, n=10, confirmed_only=True):
+def select_daily_questions(df, n=10, confirmed_only=True, previously_missed_ratio=0.7):
+    """
+    Select daily questions with prioritization for previously-missed questions.
+    
+    Args:
+        df: Questions dataframe with stats (from compute_stats)
+        n: Number of questions to select
+        confirmed_only: If True, only select from Confirmed questions
+        previously_missed_ratio: Target ratio of previously-missed (1 incorrect) to total
+                                  e.g., 0.7 = 70% previously-missed, 30% other
+    """
     work = df.copy()
 
     if confirmed_only and "VerificationStatus" in work.columns:
@@ -60,10 +70,30 @@ def select_daily_questions(df, n=10, confirmed_only=True):
     else:
         work["stale_w"] = 0
 
-    # "ROI-ish" priority: low accuracy + harder + flagged-for-review + staleness boost
-    work["priority"] = (1 - work["accuracy"]) * 2 + work["diff_w"] + work["flag_w"] + work["stale_w"]
+    # Boost for previously-missed (exactly 1 incorrect from master table)
+    work["previously_missed"] = work.get("IncorrectCount", 0).fillna(0) == 1
+    work["previously_missed_boost"] = work["previously_missed"].astype(float) * 3.0
+    
+    # "ROI-ish" priority: low accuracy + harder + flagged-for-review + staleness boost + missed boost
+    work["priority"] = (1 - work["accuracy"]) * 2 + work["diff_w"] + work["flag_w"] + work["stale_w"] + work["previously_missed_boost"]
 
-    return work.sort_values("priority", ascending=False).head(n)
+    # Sort by priority
+    work_sorted = work.sort_values("priority", ascending=False)
+    
+    # Try to maintain previously_missed_ratio
+    previously_missed = work_sorted[work_sorted["previously_missed"]]
+    others = work_sorted[~work_sorted["previously_missed"]]
+    
+    target_missed = max(1, int(n * previously_missed_ratio))
+    num_missed = min(target_missed, len(previously_missed))
+    num_others = n - num_missed
+    
+    selected_missed = previously_missed.head(num_missed)
+    selected_others = others.head(num_others)
+    
+    result = pd.concat([selected_missed, selected_others]).sort_values("priority", ascending=False).head(n)
+    
+    return result
 
 
 # =============================
