@@ -254,3 +254,175 @@ How to organize within a region:
 Use catalogs to separate business units, teams, or environments inside a regional metastore. That's what A describes — it's good practice within a region, just doesn't solve the multi-region problem.
 Memory hook: ""One metastore per region, one catalog per team""
 Region → metastore. Business unit → catalog. Those are the two org levels to keep straight."
+1084,2026-05-23 13:39:54.828224,"Memory hook: Think of it this way:
+
+spark.sql(...) = SQL with a Python costume on
+spark.table(...) = pure Python/DataFrame API
+
+Bonus to remember:
+
+spark.table(""sales"") — for reading any registered table as a DataFrame
+DeltaTable.forName(spark, ""sales"") — when you need Delta-specific operations (merge, update, delete, history)"
+1477,2026-05-23 13:42:00.414724,"Memory hook: External CSV tables are ""blind"" to new files until you tell Spark to look again. REFRESH TABLE = ""go look again."""
+1606,2026-05-23 13:46:50.970143,Read-optimized and Denormalized
+1370,2026-05-23 13:48:23.684805,"Quick managed table facts to cement:
+
+Data lives in the schema's managed storage location ✅
+Drop the table → metadata AND data both deleted ✅
+Default table type in Databricks ✅
+Moving to new database requires rewriting data ✅"
+1378,2026-05-23 13:50:02.807300,Memory hook: You need to name where you're coming from (hive_metastore) and where you're going (UC three-part name). C only got half of that right.
+1321,2026-05-23 13:53:28.044476,"sqlCREATE TABLE users_jdbc
+USING org.apache.spark.sql.jdbc
+OPTIONS (
+  url = ""jdbc:sqlite:/sqmple_db"",
+  dbtable = ""users""
+)
+Memory hooks:
+
+USING always takes the fully qualified Spark data source class → org.apache.spark.sql.jdbc
+JDBC URLs always follow jdbc:<driver>:<connection> — the driver name (sqlite, mysql, sqlserver) comes right after the first colon
+Think of it like a package import — Spark needs the full path, not a shortcut"
+1258,2026-05-23 13:58:07.075289,"The mental model:
+
+INSERT OVERWRITE = ""pour new data into the existing container"" — the container shape stays fixed
+CREATE OR REPLACE = ""smash the container and build a new one from scratch"" — shape is whatever the query produces
+
+So schema replacement isn't a special operation — it's just a natural consequence of literally recreating the table definition every time."
+1332,2026-05-23 14:00:42.863374,"Memory hook: Complete mode = ""here's everything I know so far, overwriting what was there before"" — fired on every trigger, not at the end."
+1443,2026-05-23 17:03:57.447357,"Memory hook — just remember ""ACU"":
+Append → Complete → Update
+Or think of it as a spectrum of how much gets written each trigger:
+
+Append = least (only new)
+Update = middle (only changed)
+Complete = most (everything)
+
+Watch out for: Overwrite, Merge — those are batch/Delta write modes that show up as distractors specifically to trip you up. Any time you see Overwrite or Merge in a Structured Streaming question, eliminate those options immediately.
+You already know what Complete mode does from the last question — you just needed the full list locked in. ACU and you're good."
+1334,2026-05-23 17:06:05.192704,"Memory hook — ""Delta doubles up on plural"":
+
+Data = many parquet files
+Log entries = many JSON files
+Every transaction = new files added to both
+
+Think of _delta_log as a filing cabinet where each transaction drops in a new folder — you never erase or append to an old one, you just add a new one.
+The pattern to eliminate wrong answers fast:
+
+""single file"" anywhere → ❌ wrong (Delta is always plural)
+""log removed after commit"" → ❌ wrong (that's the whole point of the log, it persists)
+""log appended"" → ❌ wrong (new file per transaction, not appended)"
+1537,2026-05-23 17:19:00.558252,"Memory hook — ""streams dot active, no parentheses""
+pythonspark.streams.active
+Break it into three parts:
+
+spark — always lowercase, it's your SparkSession instance
+.streams — the streaming manager lives here, not directly on spark
+.active — it's a property, not a method, so no parentheses
+
+Why your answer A fails on two counts:
+
+Spark — capital S is wrong, it's always spark
+.getActiveStreams() — this method doesn't exist in the PySpark API
+
+The ""no parentheses"" thing is the real trap:
+The exam loves property vs method distinctions:
+
+spark.streams.active ✅ — property, no ()
+spark.streams.getActive ❌ — doesn't exist
+spark.streams.active() ❌ — would throw an error, it's not callable
+
+Full pattern to memorize:
+pythonfor s in spark.streams.active:
+    s.stop()
+Three lowercase words, two dots, no parentheses. That's it."
+1536,2026-05-23 17:21:44.114824,"Memory hook — ""JSON needs a blueprint""
+You can't build a struct from a string without a blueprint. FROM_JSON = function + blueprint (schema). One argument is always incomplete.
+Quick reference for JSON functions:
+from_json(col, schema) — JSON string → Struct, needs schema
+to_json(col) — Struct → JSON string, no schema needed
+get_json_object(col, path) — extract one field from JSON string, path like $.name
+json_tuple(col, *fields) — extract multiple fields by field names"
+1450,2026-05-23 17:32:51.361321,"Memory hook — match the phrase to the command:
+""regardless of whether it exists"" → CREATE OR REPLACE TABLE
+""only if it doesn't exist"" → CREATE TABLE IF NOT EXISTS
+""fails if it exists"" → CREATE TABLE
+Watch out for:
+
+CREATE OR REPLACE TABLE IF EXISTS → invalid syntax, doesn't exist
+AS SELECT → makes it CTAS, copies data, not an empty table
+USING DELTA → unnecessary, Delta is the default in Databricks
+
+Clean syntax to memorize:
+CREATE OR REPLACE TABLE students (
+id STRING,
+name STRING,
+dateOfBirth DATE,
+email STRING
+)"
+1433,2026-05-23 17:36:03.729837,"Memory hook — Databricks uses MODIFY, not INSERT/DELETE
+In Databricks SQL, you cannot grant INSERT and DELETE separately. MODIFY is the single privilege that covers insert, update, and delete.
+Correct syntax to memorize:
+GRANT MODIFY ON TABLE inventory TO tom.hanks@organization.com
+The syntax order is always:
+GRANT privilege ON TABLE tablename TO user
+Watch out for:
+
+GRANT INSERT, DELETE ... → invalid in Databricks, this is standard SQL thinking
+GRANT MODIFY TO user ON inventory → wrong order, missing TABLE keyword
+USAGE → only grants access to schemas/catalogs, not row-level operations
+
+Quick privilege reference:
+SELECT — read data
+MODIFY — insert, update, delete rows
+ALL PRIVILEGES — everything"
+1947,2026-05-23 17:38:56.827406,"Memory hook — Auto Loader has 3 signatures, all must be present:
+
+readStream — it's always streaming, never spark.read
+format(""cloudFiles"") — this is the Auto Loader identifier
+checkpointLocation — required for fault tolerance, never optional
+
+Correct pattern:
+spark.readStream.format(""cloudFiles"").option(""cloudFiles.format"", source_format).load(raw_path).writeStream.option(""checkpointLocation"", checkpoint_path).table(""bronze_table"")
+Eliminate wrong answers fast:
+
+spark.read (no Stream) → batch, not Auto Loader
+format(""delta"") → reading Delta, not ingesting new files
+no checkpointLocation → incomplete, always required
+writeStream.table(""raw"") → wrong direction, Bronze writes TO bronze, not raw
+
+One line to remember:
+cloudFiles in → checkpoint out → bronze table
+If you don't see all three (readStream + cloudFiles + checkpointLocation) it's not Auto Loader."
+1897,2026-05-25 13:42:04.216071,"Memory hook — TBLPROPERTIES has two different syntaxes depending on context:
+CREATE TABLE (inline, no SET):
+CREATE TABLE inventory (id INT, units FLOAT)
+TBLPROPERTIES (business_owner = 'supply_chain')
+ALTER TABLE (after the fact, needs SET):
+ALTER TABLE inventory SET TBLPROPERTIES (business_owner = 'supply_chain')
+The trap: SET only belongs with ALTER TABLE, not CREATE TABLE.
+If you see CREATE TABLE + SET = wrong answer every time.
+Also remember VACUUM retention uses the same pattern:
+ALTER TABLE table_name SET TBLPROPERTIES (delta.deletedFileRetentionDuration = 'interval 365 days')
+Eliminate fast:
+
+CREATE TABLE ... SET TBLPROPERTIES → wrong (no SET on CREATE)
+CREATE TABLE ... SET (...) → wrong
+CREATE TABLE ... SET PROPERTY → wrong (not a real clause)
+CREATE TABLE ... TBLPROPERTIES (...) → correct"
+1010,2026-05-25 14:20:14.561210,"Both — and they do different things:
+
+RETURNS — declares the data type of the output (INT, STRING, DOUBLE, etc.)
+RETURN — the actual expression or value being returned
+
+sqlCREATE FUNCTION plus_one(value INTEGER)
+RETURNS INTEGER
+RETURN value + 1;
+Memory hook: RETURNS = type, RETURN = value
+Think of it like a function signature vs the function body. You need both every time."
+1066,2026-05-25 20:40:46.176111,"In practice for the exam just know:
+
+Materialized view = pre-computed + auto-refreshed by Databricks
+Standard view = live query, no storage
+Table = stored, but you manage all the refresh logic yourself"
+2045,2026-05-26 13:52:39.616677,Connect = pre-built connectors + governed ingestion (no coding)

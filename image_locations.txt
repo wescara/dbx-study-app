@@ -1,0 +1,57 @@
+Paragraph 49: media/image1.png
+  Text: 
+
+Paragraph 81: media/image2.png
+  Text: 
+
+Paragraph 120: media/image3.png
+  Text: 
+
+Paragraph 285: media/image4.png
+  Text: 
+
+Paragraph 360: media/image5.png
+  Text: 
+
+Paragraph 362: media/image6.png
+  Text: 
+
+Paragraph 432: media/image7.png
+  Text: 
+
+Paragraph 497: media/image8.png
+  Text: 
+
+Paragraph 597: media/image9.png
+  Text: 
+
+Paragraph 598: media/image10.png
+  Text: 
+
+Paragraph 617: media/image11.png
+  Text: 
+
+Paragraph 959: media/image12.png
+  Text: 
+
+Paragraph 960: media/image13.png
+  Text: 
+
+Paragraph 981: media/image14.png
+  Text: 
+
+Paragraph 1019: media/image1.png
+  Text: Compute configuration recommendations
+
+Paragraph 1041: media/image1.png
+  Text:  https://docs.databricks.com/en/ingestion/auto-loader/index.html
+
+Paragraph 1060: media/image15.png
+  Text: 
+
+Paragraph 1063: media/image1.png
+  Text: Connect to Apache Kafka
+
+Paragraph 1064: media/image1.png
+  Text: Kafka Options
+

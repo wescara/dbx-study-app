@@ -1,1 +1,0 @@
-0,2026-04-13 00:00:00,How do you create an external CSV table in Spark SQL with a pipe (|) delimiter and header row?,CREATE TABLE orders_csv\nUSING CSV\nOPTIONS (header="true", delimiter="|")\nLOCATION "dbfs:/user/username/retail/orders-csv";

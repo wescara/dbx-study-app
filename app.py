@@ -13,6 +13,7 @@ DATA_PATH = r"C:\dbx-study-app\data\DBx_Questions.xlsx"
 SHEET_NAME = "QuestionBank"
 ATTEMPTS_PATH = r"C:\dbx-study-app\data\attempts.csv"
 NOTES_PATH = r"C:\dbx-study-app\data\notes.csv"
+SYNTAX_QUESTIONS_PATH = r"C:\dbx-study-app\data\syntax_questions_for_review.csv"
 
 DIFF_WEIGHT = {"Easy": 0, "Medium": 1, "Hard": 2}
 EXCLUDED_QIDS_PATH = r"C:\dbx-study-app\data\excluded_qids.txt"
@@ -127,6 +128,63 @@ def get_note_for_qid(qid: int, notes_df: pd.DataFrame) -> str:
     if not match.empty:
         return str(match.iloc[-1]["note"])
     return ""
+
+
+# =============================
+# Syntax Questions persistence
+# =============================
+def load_syntax_questions(path=SYNTAX_QUESTIONS_PATH) -> pd.DataFrame:
+    """Load syntax questions, merge with full question bank, calculate miss_count and auto-rotate based on recent attempts."""
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    
+    # Load syntax metadata
+    syntax_metadata = pd.read_csv(path)
+    
+    # Load full question bank
+    full_questions = load_questions(DATA_PATH, SHEET_NAME)
+    
+    # Merge to get full question details
+    syntax_df = syntax_metadata[["QID"]].merge(
+        full_questions, 
+        on="QID", 
+        how="inner"
+    )
+    
+    # Merge back the syntax metadata (CorrectAnswer, MemoryHook)
+    syntax_df = syntax_df.merge(
+        syntax_metadata[["QID", "CorrectAnswer", "MemoryHook"]],
+        on="QID",
+        how="left"
+    )
+    
+    # Calculate miss count for each QID (all-time misses)
+    attempts_df = load_attempts()
+    if not attempts_df.empty:
+        miss_counts = attempts_df[attempts_df["correct"] == False].groupby("QID").size().to_dict()
+        syntax_df["miss_count"] = syntax_df["QID"].map(miss_counts).fillna(0).astype(int)
+        
+        # Get most recent attempt for each QID to determine sort order
+        # Group by QID and get the last attempt
+        attempts_df_sorted = attempts_df.sort_values("timestamp")
+        latest_attempts = attempts_df_sorted.groupby("QID").tail(1)
+        
+        # Create a mapping of QID -> most recent result (1 = correct, 0 = incorrect)
+        # Questions with incorrect recent attempt get priority (0), correct get deprioritized (1)
+        recent_correct = latest_attempts.set_index("QID")["correct"].to_dict()
+        syntax_df["recent_correct"] = syntax_df["QID"].map(recent_correct).fillna(-1)  # -1 = never attempted
+        
+        # Sort by: recent incorrect first (0), then never attempted (-1), then recent correct (1), then by miss_count
+        syntax_df = syntax_df.sort_values(
+            by=["recent_correct", "miss_count"],
+            ascending=[True, False]  # Ascending recent_correct puts 0 (incorrect) first, then descending miss_count
+        )
+    else:
+        syntax_df["miss_count"] = 0
+        syntax_df["recent_correct"] = -1
+        syntax_df = syntax_df.sort_values("miss_count", ascending=False)
+    
+    return syntax_df
 
 
 # =============================
@@ -538,7 +596,10 @@ def build_study_session(stats: pd.DataFrame, n: int, use_random: bool = False) -
     else:
         # For study mode: sort by priority (low accuracy, flagged, harder, stale)
         # For deep_dive and untouched: already sorted by apply_focus_filters
-        work = stats.sort_values("priority", ascending=False).head(int(n)).reset_index(drop=True)
+        if "priority" in stats.columns:
+            work = stats.sort_values("priority", ascending=False).head(int(n)).reset_index(drop=True)
+        else:
+            work = stats.head(int(n)).reset_index(drop=True)
     
     qids = [int(x) for x in work["QID"].tolist()]
 
@@ -552,7 +613,7 @@ def build_study_session(stats: pd.DataFrame, n: int, use_random: bool = False) -
             "Difficulty": r.get("Difficulty", ""),
             "Question": r.get("Question", ""),
             "CorrectLetter": r.get("CorrectLetter", ""),
-            "Explanation": r.get("Explanation", ""),
+            "Explanation": r.get("Explanation", "") if "Explanation" in r.index else r.get("CorrectAnswer", ""),
             "VerificationNotes": r.get("VerificationNotes", None),
             "Options": get_options(r),
         }
@@ -861,7 +922,7 @@ else:
 st.sidebar.markdown("---")
 
 # Sidebar navigation (do not mutate nav_mode after this widget exists)
-mode = st.sidebar.radio("Mode", ["Study Mode", "Weakness Dashboard", "Search"], key="nav_mode")
+mode = st.sidebar.radio("Mode", ["Study Mode", "Weakness Dashboard", "Notes Review", "Syntax Reference", "Search"], key="nav_mode")
 
 st.sidebar.markdown("### Settings")
 confirmed_only = st.sidebar.checkbox("Confirmed only (recommended)", value=True)
@@ -1200,6 +1261,179 @@ try:
         st.stop()
 
     # =============================
+    # Notes Review Mode
+    # =============================
+    if mode == "Notes Review":
+        st.header("📝 Notes Review")
+        st.markdown("Review all your study notes organized by topic. Click on a QID to study that question.")
+        
+        notes_df = load_notes()
+        
+        if notes_df.empty:
+            st.info("📭 No notes yet. Create notes while studying to see them here!")
+        else:
+            # Join notes with questions to get topic and question text
+            notes_with_context = notes_df.merge(
+                questions[["QID", "Topic", "Subtopic", "Question"]],
+                on="QID",
+                how="left"
+            )
+            
+            # Topic filter
+            all_topics = sorted(notes_with_context["Topic"].dropna().unique().tolist())
+            selected_topics = st.multiselect(
+                "Filter by topic (leave blank for all):",
+                options=all_topics,
+                default=None,
+                key="notes_topic_filter"
+            )
+            
+            if selected_topics:
+                filtered_notes = notes_with_context[notes_with_context["Topic"].isin(selected_topics)]
+            else:
+                filtered_notes = notes_with_context.copy()
+            
+            # Sort by date (newest first)
+            filtered_notes = filtered_notes.sort_values("timestamp", ascending=False)
+            
+            # Display stats
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Notes", len(filtered_notes))
+            with col2:
+                st.metric("Topics Covered", filtered_notes["Topic"].nunique())
+            with col3:
+                st.metric("Subtopics Covered", filtered_notes["Subtopic"].nunique())
+            
+            st.markdown("---")
+            
+            # Display notes in expandable sections by topic
+            for topic in sorted(filtered_notes["Topic"].unique()):
+                topic_notes = filtered_notes[filtered_notes["Topic"] == topic]
+                with st.expander(f"**{topic}** ({len(topic_notes)} notes)", expanded=False):
+                    for _, row in topic_notes.iterrows():
+                        col1, col2 = st.columns([1, 4])
+                        with col1:
+                            if st.button(
+                                f"QID {int(row['QID'])}",
+                                key=f"notes_qid_{row['QID']}_btn",
+                                use_container_width=True
+                            ):
+                                st.session_state.jump_to_qid = int(row["QID"])
+                                st.session_state.nav_request = "Study Mode"
+                                st.rerun()
+                        with col2:
+                            st.write(f"**{row['Subtopic']}**")
+                            st.caption(f"📝 {row['note']}")
+                            if pd.notna(row["Question"]):
+                                st.caption(f"Q: {str(row['Question'])[:100]}...")
+                            st.markdown("---")
+
+    # =============================
+    # Syntax Reference Page
+    # =============================
+    if mode == "Syntax Reference":
+        st.header("⚙️ Syntax Quick Reference")
+        st.markdown("Review syntax patterns. Click **Study** to practice the full question.")
+        
+        syntax_df = load_syntax_questions()
+        
+        if syntax_df.empty:
+            st.info("📭 No syntax questions file found.")
+        else:
+            # Filter by miss count
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                filter_option = st.radio(
+                    "Filter by miss count:",
+                    ["All", "High (5+)", "Medium (2-4)", "Low (1)"],
+                    horizontal=True,
+                    key="syntax_filter"
+                )
+            
+            if filter_option == "High (5+)":
+                filtered_syntax = syntax_df[syntax_df["miss_count"] >= 5]
+                filter_color = "🔴"
+            elif filter_option == "Medium (2-4)":
+                filtered_syntax = syntax_df[(syntax_df["miss_count"] >= 2) & (syntax_df["miss_count"] < 5)]
+                filter_color = "🟡"
+            elif filter_option == "Low (1)":
+                filtered_syntax = syntax_df[syntax_df["miss_count"] == 1]
+                filter_color = "🟢"
+            else:
+                filtered_syntax = syntax_df
+                filter_color = ""
+            
+            if filtered_syntax.empty:
+                st.info(f"No syntax questions in the '{filter_option}' category.")
+            else:
+                # Count only questions that still need work (not recently correct)
+                needs_work = filtered_syntax[filtered_syntax["recent_correct"] != 1]
+                
+                # Stats (only for questions still needing work)
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Still Need Work", len(needs_work))
+                with col2:
+                    st.metric("Total Misses", int(needs_work["miss_count"].sum()) if not needs_work.empty else 0)
+                with col3:
+                    st.metric("Topics", needs_work["Topic"].nunique() if not needs_work.empty else 0)
+                
+                st.markdown("---")
+                
+                # Display each syntax pattern
+                for idx, (_, row) in enumerate(filtered_syntax.iterrows()):
+                    qid = int(row["QID"])
+                    miss_count = int(row["miss_count"])
+                    topic = row.get("Topic", "")
+                    subtopic = row.get("Subtopic", "")
+                    note = row.get("Note", "")
+                    correct_answer = row.get("CorrectAnswer", "")
+                    memory_hook = row.get("MemoryHook", "")
+                    recent_correct = row.get("recent_correct", -1)
+                    
+                    # Color code by miss frequency
+                    if miss_count >= 5:
+                        miss_color = "🔴"
+                    elif miss_count >= 2:
+                        miss_color = "🟡"
+                    else:
+                        miss_color = "🟢"
+                    
+                    # Status indicator for most recent attempt
+                    if recent_correct == 1:
+                        status = "✅ Last: Correct"
+                    elif recent_correct == 0:
+                        status = "❌ Last: Incorrect"
+                    else:
+                        status = "⭕ Never attempted"
+                    
+                    # Create expander for each pattern
+                    with st.expander(
+                        f"{miss_color} QID {qid} • {topic} • {subtopic} (missed {miss_count}x) — {status}",
+                        expanded=False
+                    ):
+                        # Display syntax (correct answer)
+                        st.write("**💾 Syntax:**")
+                        st.code(correct_answer, language="sql")
+                        
+                        # Display memory hook if available
+                        if memory_hook and memory_hook != "":
+                            st.write("**🧠 Memory Hook:**")
+                            st.info(memory_hook)
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button("📚 Study Question", key=f"syntax_study_{qid}", use_container_width=True):
+                                st.session_state.jump_to_qid = qid
+                                st.session_state.nav_request = "Study Mode"
+                                st.rerun()
+                        with col2:
+                            st.caption(f"QID: {qid}")
+                        with col3:
+                            st.caption(f"Misses: {miss_count}")
+
+    # =============================
     # Search Mode
     # =============================
     if mode == "Search" and not st.session_state.get("jump_to_qid"):
@@ -1329,18 +1563,19 @@ try:
     # Study Mode Variants (only show if in study mode)
     if current_mode == "study":
         st.subheader("📚 Study Variant:")
-        variant_col1, variant_col2, variant_col3, variant_col4 = st.columns(4)
+        variant_row1 = st.columns(3)
+        variant_row2 = st.columns(2)
         
         current_variant = st.session_state.get("study_variant", "normal")
         
-        with variant_col1:
+        with variant_row1[0]:
             variant_label = ("✓ " if current_variant == "normal" else "") + "📊 Priority (weak first)"
             if st.button(variant_label, use_container_width=True, key="btn_variant_normal"):
                 st.session_state.study_variant = "normal"
                 st.session_state.session_key = None  # Rebuild session
                 st.rerun()
         
-        with variant_col2:
+        with variant_row1[1]:
             variant_label = ("✓ " if current_variant == "untouched" else "") + "🆕 Untouched (0 attempts)"
             if st.button(variant_label, use_container_width=True, key="btn_variant_untouched"):
                 st.session_state.study_variant = "untouched"
@@ -1349,21 +1584,21 @@ try:
                 st.session_state.session_key = None
                 st.rerun()
         
-        with variant_col3:
+        with variant_row1[2]:
             variant_label = ("✓ " if current_variant == "recent_misses" else "") + "📕 Recent Misses"
             if st.button(variant_label, use_container_width=True, key="btn_variant_recent_misses"):
                 st.session_state.study_variant = "recent_misses"
                 st.session_state.session_key = None
                 st.rerun()
         
-        with variant_col4:
+        with variant_row2[0]:
             variant_label = ("✓ " if current_variant == "random" else "") + "🎲 Random"
             if st.button(variant_label, use_container_width=True, key="btn_variant_random"):
                 st.session_state.study_variant = "random"
                 st.session_state.session_key = None
                 st.rerun()
         
-        with variant_col4:
+        with variant_row2[1]:
             variant_label = ("✓ " if current_variant == "deep_dive" else "") + "🎯 Topic Deep Dive"
             if st.button(variant_label, use_container_width=True, key="btn_variant_deep_dive"):
                 st.session_state.study_variant = "deep_dive"
