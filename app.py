@@ -486,7 +486,7 @@ def reset_study_session():
     
     # Timed session state
     st.session_state.session_mode = "study"  # study | speed_drill | exam_mode
-    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random | recent_misses
+    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random | recent_misses | review_needed | review_needed
     st.session_state.study_deep_dive_topic = None
     st.session_state.study_untouched_topic = None
     st.session_state.session_time_started = None
@@ -528,10 +528,10 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
         return df
     
     elif study_variant == "recent_misses":
-        # Questions answered incorrectly in the last 24 hours
+        # Questions answered incorrectly in the last 48 hours
         import pandas as pd
         now = pd.Timestamp.now()
-        cutoff = now - pd.Timedelta(hours=24)
+        cutoff = now - pd.Timedelta(hours=48)
         
         # Get all attempts data - need to load fresh to get latest
         attempts_recent = load_attempts()
@@ -546,6 +546,37 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
             work = work.sort_values('miss_count', ascending=False)
             return work
         return df
+    
+    elif study_variant == "review_needed":
+        # Combine untouched questions + recently missed questions
+        import pandas as pd
+        now = pd.Timestamp.now()
+        cutoff = now - pd.Timedelta(hours=24)
+        
+        # Get untouched questions (0 attempts)
+        untouched = df[df['attempts'] == 0].copy()
+        untouched['priority_group'] = 1  # Lower priority
+        
+        # Get recently missed questions
+        attempts_recent = load_attempts()
+        recently_missed = df.copy()
+        recently_missed['priority_group'] = 0  # Higher priority
+        
+        if not attempts_recent.empty:
+            attempts_recent['timestamp'] = pd.to_datetime(attempts_recent['timestamp'], format='mixed', errors='coerce')
+            recent_misses = attempts_recent[(attempts_recent['timestamp'] >= cutoff) & (attempts_recent['correct'] == False)]
+            missed_qids = set(recent_misses['QID'].unique())
+            recently_missed = recently_missed[recently_missed['QID'].isin(missed_qids)].copy()
+            # Sort recently missed by number of times missed (most missed first)
+            miss_counts = recent_misses.groupby('QID').size().to_dict()
+            recently_missed['miss_count'] = recently_missed['QID'].map(miss_counts)
+            recently_missed = recently_missed.sort_values('miss_count', ascending=False)
+        else:
+            recently_missed = pd.DataFrame(columns=untouched.columns)
+        
+        # Combine: recently missed first, then untouched
+        work = pd.concat([recently_missed, untouched], ignore_index=True)
+        return work
     
     # Default: apply focus filters if any
     if not focus_type:
@@ -887,13 +918,13 @@ st.set_page_config(page_title="Databricks Associate Engineer Study App", layout=
 st.title("Databricks Associate Engineer Study App")
 
 # Calculate days until exam
-exam_date = pd.Timestamp("2026-06-16")
+exam_date = pd.Timestamp("2026-06-17")
 today = pd.Timestamp.now()
 days_until_exam = (exam_date - today).days
 
 # Display exam countdown in sidebar with visual emphasis (green success style)
 if days_until_exam > 0:
-    st.sidebar.markdown(f"<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.2); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 14px; color: #999;'>📌 EXAM: JUNE 16</p><p style='margin: 10px 0 0 0; font-size: 36px; font-weight: bold; color: #00C864;'>{days_until_exam}</p><p style='margin: 5px 0 0 0; font-size: 12px; color: #999;'>days left</p></div>", unsafe_allow_html=True)
+    st.sidebar.markdown(f"<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.2); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 14px; color: #999;'>📌 EXAM: JUNE 17</p><p style='margin: 10px 0 0 0; font-size: 36px; font-weight: bold; color: #00C864;'>{days_until_exam}</p><p style='margin: 5px 0 0 0; font-size: 12px; color: #999;'>days left</p></div>", unsafe_allow_html=True)
 else:
     st.sidebar.warning("⚠️ Exam is today or past!")
 st.sidebar.markdown("---")
@@ -1324,7 +1355,8 @@ try:
                                 st.rerun()
                         with col2:
                             st.write(f"**{row['Subtopic']}**")
-                            st.caption(f"📝 {row['note']}")
+                            note_display = row['note'].replace('\n', '  \n')  # Markdown line breaks
+                            st.markdown(f"📝 {note_display}")
                             if pd.notna(row["Question"]):
                                 st.caption(f"Q: {str(row['Question'])[:100]}...")
                             st.markdown("---")
@@ -1371,12 +1403,14 @@ try:
                 needs_work = filtered_syntax[filtered_syntax["recent_correct"] != 1]
                 
                 # Stats (only for questions still needing work)
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Still Need Work", len(needs_work))
                 with col2:
-                    st.metric("Total Misses", int(needs_work["miss_count"].sum()) if not needs_work.empty else 0)
+                    st.metric("Never Attempted", len(needs_work[needs_work["recent_correct"] == -1]))
                 with col3:
+                    st.metric("Total Misses", int(needs_work["miss_count"].sum()) if not needs_work.empty else 0)
+                with col4:
                     st.metric("Topics", needs_work["Topic"].nunique() if not needs_work.empty else 0)
                 
                 st.markdown("---")
@@ -1564,7 +1598,7 @@ try:
     if current_mode == "study":
         st.subheader("📚 Study Variant:")
         variant_row1 = st.columns(3)
-        variant_row2 = st.columns(2)
+        variant_row2 = st.columns(3)
         
         current_variant = st.session_state.get("study_variant", "normal")
         
@@ -1599,6 +1633,13 @@ try:
                 st.rerun()
         
         with variant_row2[1]:
+            variant_label = ("✓ " if current_variant == "review_needed" else "") + "🔧 Knowledge Gaps"
+            if st.button(variant_label, use_container_width=True, key="btn_variant_review_needed"):
+                st.session_state.study_variant = "review_needed"
+                st.session_state.session_key = None
+                st.rerun()
+        
+        with variant_row2[2]:
             variant_label = ("✓ " if current_variant == "deep_dive" else "") + "🎯 Topic Deep Dive"
             if st.button(variant_label, use_container_width=True, key="btn_variant_deep_dive"):
                 st.session_state.study_variant = "deep_dive"
@@ -2276,7 +2317,8 @@ try:
             existing_note = get_note_for_qid(rv.get("qid"), load_notes())
             if existing_note:
                 st.markdown("### 📝 Your Note")
-                st.info(existing_note)
+                note_display = existing_note.replace('\n', '  \n')  # Markdown line breaks
+                st.info(note_display)
 
             note_text = st.text_area(
                 "Add a personal note (e.g. why you missed it, what to remember):",

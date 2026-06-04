@@ -56,7 +56,6 @@ Need a total?
 Slow MANY users?
 → Increase MAX CLUSTERS"
 1218,2026-04-08 13:03:31.495388,"“All available data, then stop” = availableNow"
-1412,2026-04-08 13:06:34.913005,"If you GROUP BY, every other column must use collect_ or an aggregate.*"
 1684,2026-04-08 13:12:16.993879,"Instant elimination table (exam speed)
 
 Use case                         → Correct compute
@@ -161,7 +160,6 @@ Pick from list or type your own
 
 multiselect
 Pick one or more from a list"
-1390,2026-05-18 13:24:13.371417,"assert is a statement, not a function."
 1398,2026-05-18 13:27:40.519150,"The rule: Streaming DataFrames don't support operations that require ordering across the entire dataset — because the data is infinite and never ""done.""
 
 A — simple SELECT ✅ fine
@@ -426,3 +424,487 @@ Materialized view = pre-computed + auto-refreshed by Databricks
 Standard view = live query, no storage
 Table = stored, but you manage all the refresh logic yourself"
 2045,2026-05-26 13:52:39.616677,Connect = pre-built connectors + governed ingestion (no coding)
+2053,2026-05-26 18:18:41.406958,If I’m typing column definitions → it’s NOT CTAS
+2055,2026-05-26 18:21:48.421159,"Marketplace = Data, Federation = Databases, Partner Connect = Tools"
+2057,2026-05-26 18:26:50.886518,"“Bundles = Resources bucket”
+“Resources holds jobs — not pipelines”"
+2061,2026-05-27 13:28:41.448753,"""is_account_group_member() chains with OR/AND — groups, not current_user()""
+The trap is thinking current_user() handles group logic — it only returns the username. is_account_group_member() is what checks group membership."
+2070,2026-05-27 13:41:15.985879,"Memory hook for the confirmed logic: ""Active = end_date IS NULL; tenure = datediff(literal_date, start_date) > 30"""
+2073,2026-05-27 14:45:08.410283,"Widgets IN, TaskValues OUT
+Widgets ask, TaskValues pass"
+2076,2026-05-27 14:50:06.675749,"Watermark = drop old data
+Late data → use watermark
+Join + late data = watermark to limit state"
+2083,2026-05-27 15:30:57.698047,"table_lineage → big picture tables
+column_lineage → precise column tracking ✅"
+2085,2026-05-27 15:34:42.086519,"If order matters → use window, not dropDuplicates"
+2089,2026-05-27 15:47:07.091686,"spark.readStream
+    .format(""kafka"")
+    .option(""kafka.bootstrap.servers"", ...)
+    .option(""subscribe"", ...)
+
+“Kafka talks to Kafka”
+“Kafka = format('kafka')”
+
+Auto Loader → cloudFiles ✅
+Kafka → kafka ✅"
+2050,2026-05-27 15:51:54.007728,"If cloud says denied → it’s permissions, not plumbing"
+1155,2026-05-27 16:57:07.191603,"CREATE OR REPLACE TABLE - GOOD
+NOT 
+CREATE TABLE IF NOT EXISTS - BAD"
+1167,2026-05-27 17:06:54.471833,"alternates:
+
+SELECT SUM(CASE WHEN member_id IS NULL THEN 1 ELSE 0 END) 
+FROM my_table;
+or
+
+SELECT SUM(member_id IS NULL)
+FROM my_table;"
+1296,2026-05-28 14:49:15.898236,"Simple way to remember:
+
+Data lake = storage layer
+Data lakehouse = storage + table reliability + governance + analytics/ML platform"
+1315,2026-05-28 14:56:07.420668,"A managed Delta table is stored as Parquet data files, but it is not the same thing as a plain Parquet table.
+
+In Databricks:
+
+Delta table = Parquet files plus a Delta transaction log, stored in _delta_log
+Parquet table = just Parquet files, without Delta Lake transaction metadata
+So a managed Delta table physically uses Parquet for its data files, but logically it is a Delta Lake table.
+
+That means it supports features plain Parquet does not, such as:
+
+ACID transactions
+MERGE, UPDATE, DELETE
+time travel
+schema enforcement/evolution
+transaction history
+streaming and batch consistency
+A quick way to say it:
+
+Delta tables are built on Parquet, but Delta is not just Parquet."
+1317,2026-05-28 15:13:21.235257,"CREATE OR REPLACE TEMPORARY VIEW view_name
+CREATE OR REPLACE GLOBAL TEMPORARY VIEW view_name"
+1319,2026-05-28 15:15:32.379120,"For a schema/database in Databricks SQL, these are effectively similar terms:
+
+DROP DATABASE customers CASCADE;
+or:
+
+DROP SCHEMA customers CASCADE;
+CASCADE drops the schema/database and the objects inside it, such as tables and views.
+
+For a table, use:
+
+DROP TABLE table_name;
+or with schema qualification:
+
+DROP TABLE customers.orders;
+There is no CASCADE needed for a normal table drop. A table is already the object being dropped.
+
+Common related commands:
+
+DROP VIEW view_name;
+DROP TABLE IF EXISTS customers.orders;
+DROP SCHEMA IF EXISTS customers CASCADE;
+Important distinction:
+
+DROP SCHEMA ... CASCADE drops the schema and its contained objects
+DROP TABLE ... drops one table
+For a managed table, Databricks also removes the managed table data
+For an external table, Databricks removes the table metadata, but not the underlying data files"
+1364,2026-05-28 15:24:16.886530,dbutils.notebook.run
+1365,2026-05-28 15:27:40.483998,"Memory hook:
+
+Sequential = Size. Simultaneous = Scale.
+
+For this question, the key clue is:
+
+“all of their sequentially run queries”
+“endpoint is not used by any other user”
+
+That means the problem is not concurrency. The queries are waiting on the power of one warehouse/cluster, so you need a bigger cluster size.
+
+So remember:
+
+Slow single-file line of queries → make the machine stronger → increase cluster size
+Many users/queries at once → add more lanes → increase max scaling range
+Why A was tempting: “scaling range” sounds like it makes things faster, but in Databricks SQL warehouses it mostly helps when there are multiple concurrent queries/users. Since these are sequential, extra clusters do not help much.
+
+Personal note you could add:
+
+I missed this because I saw “all queries are slow” and thought “scale out.” But the clue is “sequential” and “no other users,” so this is not a concurrency issue. For latency of one query at a time, increase cluster size, not cluster count."
+1368,2026-05-28 15:30:08.459304,"Memory hook:
+
+Control plane controls. Data/results go to your storage.
+
+For job results, think:
+
+“My jobs, my results, my bucket.”
+
+Databricks may orchestrate the job from the control plane, but the actual results are stored in the DBFS layer backed by customer-managed cloud storage like S3, ADLS, or Blob Storage.
+
+How to avoid the trap:
+
+Control Plane = UI, jobs service, notebooks metadata, orchestration
+Data Plane = clusters run the work
+DBFS/customer storage = job results/data are stored there
+Personal note:
+
+I picked Control Plane because jobs are managed there, but results are data/output. Databricks controls the job, but stores results in my cloud storage through DBFS."
+1388,2026-05-28 15:32:56.394716,Range Rover
+1449,2026-05-28 15:57:26.559999,"Memory hook:
+
+A view is a window. The table owner controls the room behind it.
+
+David got access to the window from Ross:
+
+regional_sales_vw
+But the data lives in the room behind the window:
+
+sales table
+Since Mike owns the sales table, only Mike can grant David access to the underlying table.
+
+So remember:
+
+View access is not enough. You need the base-table blessing from the base-table owner.
+
+Why E was tempting:
+
+Ross created the view, so it feels like Ross should grant everything. But Ross only controls the view. Mike controls the sales table.
+
+Personal note:
+
+I picked Ross because he created the view, but the error is about the underlying table. For a view to work, David needs SELECT on the view from Ross and SELECT on the sales table from Mike."
+1725,2026-05-28 16:11:14.397120,"Memory hook:
+
+Databricks Connect = connect my local code to Databricks Spark."
+1412,2026-05-29 14:55:01.581313,"Function / Term Reference
+
+collect_set()
+Keyword: Group unique
+Definition: Aggregates rows into an array of unique values for each group.
+
+collect_list()
+Keyword: Group all
+Definition: Aggregates rows into an array, keeping duplicates.
+
+array_distinct() 
+Keyword: Array dedupe Definition: 
+Removes duplicate values from an existing array.
+
+flatten() 
+Keyword: Unnest arrays 
+Definition: Converts an array of arrays into a single flat array.
+
+explode() 
+Keyword: Rows from array 
+Definition: Converts each element of an array into its own row.
+
+GROUP BY 
+Keyword: Per entity 
+Definition: Groups rows so aggregate functions calculate one result per group.
+
+items.item_id 
+Keyword: Field from structs 
+Definition: Pulls the item_id field out of each struct inside the items array."
+1683,2026-05-29 15:36:41.273489,"Exam hook:
+
+No table? Use format.\path``.
+
+Or even shorter:
+
+JSON before journey.
+json. comes before the folder path."
+1525,2026-05-29 15:39:29.775264,"Exam hook:
+
+Permissions are granted. Owners are altered.
+
+Or shorter:
+
+GRANT rights, ALTER owner.
+
+Personal note:
+
+I picked GRANT because ownership feels like a permission, but Databricks treats ownership transfer as changing the table’s owner property. For table ownership, remember ALTER TABLE ... OWNER TO ...."
+1497,2026-05-29 15:41:31.065147,"Memory hook:
+
+Pool = parked cars, not a car factory.
+
+A Databricks cluster pool is like a parking lot of warm, ready-to-use instances. When a cluster starts, it can grab those “parked cars” instead of waiting for new ones to be delivered.
+
+So the main point is:
+
+Cluster pools save startup time.
+
+Correct answer:
+
+C: Cluster pools allow you to save time when starting a new cluster
+Why D was tempting:
+
+“Share resources among multiple teams” sounds reasonable because multiple teams can use the same pool. But that is not the core purpose. The exam wants the primary Databricks benefit: faster cluster startup.
+
+Quick distinctions:
+
+Pool = keeps idle instances ready
+Cluster = runs the Spark workload
+Autoscaling = changes cluster size
+Load balancing = distributes traffic/work, not what pools do
+Access controls/quotas = better answer for team resource governance
+Short hook:
+
+Pools don’t balance. Pools don’t build. Pools pre-warm."
+1371,2026-05-29 15:45:58.082676,"Exam hook:
+
+OPTIMIZE takes the table. ZORDER takes the column.
+
+Or even shorter:
+
+Optimize table name, ZORDER column in parentheses.
+
+Personal note:
+
+I got the concept right but added SQL muscle memory: TABLE. For Databricks OPTIMIZE, remember the clean syntax: OPTIMIZE transactions ZORDER BY (transactionId)."
+1762,2026-05-29 15:52:50.136764,"Memory hook:
+
+File filtering happens in the path, not the WHERE.
+
+Correct idea:
+
+SELECT *
+FROM json.`/Volumes/commerce/landing/transactions/transactions_2023_*.json`
+Your answer E was tempting because LIKE 'transactions_2023_%' looks like filtering, but that filters rows after reading data. It does not tell Spark which files to read.
+
+Key distinction:
+
+Symbol	Used for	Example
+*	File path wildcard	transactions_2023_*.json
+%	SQL LIKE wildcard	WHERE name LIKE 'transactions_2023_%'
+Exam hook:
+
+Star before scan. Percent after scan.
+
+Meaning:
+
+* in the file path limits files Spark reads
+% in LIKE filters values after Spark has already read data
+Also, Spark SQL file path syntax should usually use backticks around the path:
+
+SELECT *
+FROM json.`/Volumes/commerce/landing/transactions/transactions_2023_*.json`
+Even if the answer choices omit backticks, answer A has the right concept: JSON format prefix + wildcard in the file path."
+1436,2026-05-29 15:59:36.012979,"Step-by-step:
+
+Start: x = 1, y = 2
+
+if x < y:
+1 < 2 is True
+x = 2 * 1 = 2
+
+if x == y:
+2 == 2 is True
+x += 1  -> x = 3
+y -= 2  -> y = 0
+
+return (x, y)
+return (3, 0)
+So y becomes 0 because it starts as 2, then this line runs once:
+
+y -= 2
+That means:
+
+y = y - 2"
+1535,2026-05-29 16:01:41.957644,"Exam hook:
+
+Retention is a property, not an extended property.
+
+Or shorter:
+
+VACUUM waits because deletedFileRetentionDuration says so.
+
+Personal note:
+
+I picked EXTENDED because compliance sounded like an advanced setting, but Delta retention is just a normal table property: delta.deletedFileRetentionDuration."
+1784,2026-05-29 16:17:40.444534,"Memory hook:
+
+Array of structs needs a nickname.
+
+Correct answer:
+
+FILTER(students, i -> i.total_courses < 3)
+Why:
+
+students is an array
+Each element inside the array is probably a struct
+To inspect each student, you give each array element a temporary name, like i
+Then you check the field:
+i.total_courses < 3
+Think of it like:
+
+FILTER(array, each_item -> condition_on_each_item)
+So:
+
+FILTER(students, i -> i.total_courses < 3)
+means:
+
+Go through each student i in the students array and keep only students where i.total_courses < 3.
+
+Why C was tempting:
+
+FILTER(students, total_courses < 3)
+It has the right function, but it does not say whose total_courses field to check. Spark needs the lambda variable.
+
+Exam hook:
+
+FILTER keeps. TRANSFORM changes. Lambda names the item.
+
+Or shorter:
+
+Filter an array? Name each element first.
+
+Examples:
+
+FILTER(students, i -> i.total_courses < 3)
+TRANSFORM(students, i -> i.total_courses)
+FILTER returns fewer elements.
+TRANSFORM returns changed elements."
+1127,2026-05-29 16:22:30.228361,"Exam hook:
+
+USING chooses the source. OPTIONS supplies the connection.
+
+Or shorter:
+
+JDBC table? USING jdbc OPTIONS. Error if exists? leave out IF NOT EXISTS."
+1390,2026-05-29 17:02:53.243955,"Exam hook:
+
+No if, no else, no parentheses. Assert condition, message.
+
+Personal note:
+
+I picked the English-looking version, but Python assert has its own simple grammar: condition first, message after comma."
+1719,2026-06-01 16:15:24.470863,"Requirement Trigger
+
+Run micro-batches every fixed interval --> Trigger.ProcessingTime(""1 minute"")
+Process all available data, then stop --> Trigger.AvailableNow()
+Process one batch, then stop --> Trigger.Once()
+Continuous low-latency mode, not normal micro-batch --> Trigger.Continuous(...)
+
+Default trigger {no .trigger(...)}
+.writeStream
+
+
+Fixed interval
+.writeStream.trigger(processingTime=""1 minute"")
+
+Available now
+.writeStream.trigger(availableNow=True)
+
+Once
+.writeStream.trigger(once=True)
+
+Continuous
+.writeStream.trigger(continuous=""1 second"")"
+1100,2026-06-02 10:24:33.024262,"Driver's job = coordinate + distribute work
+Worker's job = execute the tasks
+Storage's job = hold the data"
+2090,2026-06-02 14:54:04.344329,system.access.audit
+2108,2026-06-02 15:40:10.170735,"Yes, I think your callout is right: A, C is not a sound answer key.
+
+Why:
+
+%scala is needed for the Scala helper function.
+%sql is the direct magic command to query the Delta table in SQL.
+%fs is the direct magic command to list files in DBFS.
+So as written, the question really points to three magics: A, B, C.
+
+Why the imported key may have said A, C:
+
+In a Python notebook, the SQL check could be done without %sql, for example via spark.sql(...).
+But the question explicitly asks which magic commands are required for those tasks, and for a SQL query the matching magic is %sql.
+So I’d mark this question as:
+
+ambiguous / bad multi-answer question
+recommended fix: change it to “Which three magic commands…”
+corrected answer: A, B, C
+Official docs:
+
+Databricks notebook magics include %scala and %sql: Develop code in Databricks notebooks
+Databricks also documents %fs for filesystem commands like listing files: Develop code in Databricks notebooks"
+2104,2026-06-02 15:48:47.441531,SLOWLY READ THE QUESTION!
+2120,2026-06-03 15:39:29.566919,"Memory hook:
+
+“COPY remembers what it copied.”
+
+For Databricks:
+
+COPY INTO = batch file loader that remembers loaded files through the Delta log.
+Auto Loader / cloudFiles = streaming-style loader that needs checkpoints.
+INSERT INTO = blindly pours data in again.
+MERGE = matches rows by keys, not files.
+Exam phrase to lock in:
+
+If the job is batch and the question says “rerun without duplicates” or “no checkpoint,” think: COPY INTO."
+2121,2026-06-03 15:45:26.882295,"I missed this because the stem led with AI and semantic understanding, so I matched it to DatabricksIQ. The real clue was “high-performance execution engine” and “accelerates SQL and DataFrame workloads,” which means Photon. DatabricksIQ = intelligence/semantic layer; Photon = execution/performance engine.
+
+Note: 
+DatabricksIQ is a valid Databricks term.
+
+Databricks materials describe it as the Data Intelligence Engine, with wording like “Data Intelligence Engine (DatabricksIQ)” that understands the uniqueness of customer data. Source: Databricks Partner Program guide.
+
+But there’s a nuance: in newer docs, Databricks often talks more in terms of Databricks AI assistive features, Genie, Genie Spaces, AI-generated comments, Intelligent Search, and semantic understanding rather than making DatabricksIQ the main user-facing product name. See Databricks AI assistive features and What is Databricks?.
+
+So for the exam:
+
+DatabricksIQ = intelligence/semantic AI layer
+Photon = SQL/DataFrame performance execution engine
+
+Your instinct that DatabricksIQ sounded like the semantic thing was right. The trick was that the question asked for the thing that is not the semantic layer."
+2124,2026-06-03 21:03:31.752956,"""Mark the water BEFORE you build the window""
+
+You check the tide (watermark) before you decide where to build your sandcastle (window).
+
+
+Watermark = how long you wait for late waves (late data) — 2 hours
+Window = the size of your sandcastle plot — 1 hour
+Order matters: mark first, group second
+
+
+So when you see a streaming + late data question, mentally say:
+
+""withWatermark → groupBy(window) → agg""
+
+And D is a trap — filter on current_timestamp is a batch mindset. It physically drops late rows rather than managing state. Watermark accepts late data up to the threshold, then cleanly closes state. Filter just blindly cuts data off.
+
+Why C is wrong too — easy to mix up: the watermark duration should match the lateness tolerance (2 hrs), and the window should match the aggregation bucket (1 hr). C swaps them."
+2131,2026-06-04 09:43:49.150278,"""Tables for tables, Volumes for files""
+
+Think of Unity Catalog like a filing cabinet:
+
+Tables = spreadsheets (structured, rows/columns)
+Volumes = manila folders (raw files — PDFs, images, audio, video)
+
+
+
+The path is the giveaway:
+
+/Volumes/<catalog>/<schema>/<volume>/...
+
+If you see a question mention ""standard file paths"" + ""non-tabular"" + ""Unity Catalog governed"" — that's the Volumes trifecta. All three boxes → C.
+
+Why D is the trap:
+DBFS mounts are the old way — pre-Unity Catalog. They're not governed by UC permissions, which the question explicitly requires. Anytime a question says ""Unity Catalog permissions"" + files, DBFS is automatically out.
+
+Quick mental check:
+
+PDFs/images/video → not a table → Volume
+SQL rows/columns → Table
+""DBFS mount"" + ""UC governed"" in the same sentence → contradiction → wrong answer"
+2132,2026-06-04 09:47:26.843108,"A window needs three things: PARTITION, ORDER, FRAME
+
+Think of it like a racetrack:
+
+partitionBy = which race (each store runs its own race)
+orderBy = the order runners cross the line (by date)
+rowsBetween = ""count everyone from the starting gun up to right now""
+
+All three required for a true cumulative sum. Missing any one = wrong answer."
