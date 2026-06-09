@@ -486,7 +486,7 @@ def reset_study_session():
     
     # Timed session state
     st.session_state.session_mode = "study"  # study | speed_drill | exam_mode
-    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random | recent_misses | review_needed | review_needed
+    st.session_state.study_variant = "normal"  # normal | deep_dive | untouched | random | recent_misses
     st.session_state.study_deep_dive_topic = None
     st.session_state.study_untouched_topic = None
     st.session_state.session_time_started = None
@@ -528,10 +528,10 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
         return df
     
     elif study_variant == "recent_misses":
-        # Questions answered incorrectly in the last 48 hours
+        # Questions answered incorrectly in the last 24 hours
         import pandas as pd
         now = pd.Timestamp.now()
-        cutoff = now - pd.Timedelta(hours=48)
+        cutoff = now - pd.Timedelta(hours=24)
         
         # Get all attempts data - need to load fresh to get latest
         attempts_recent = load_attempts()
@@ -546,37 +546,6 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
             work = work.sort_values('miss_count', ascending=False)
             return work
         return df
-    
-    elif study_variant == "review_needed":
-        # Combine untouched questions + recently missed questions
-        import pandas as pd
-        now = pd.Timestamp.now()
-        cutoff = now - pd.Timedelta(hours=24)
-        
-        # Get untouched questions (0 attempts)
-        untouched = df[df['attempts'] == 0].copy()
-        untouched['priority_group'] = 1  # Lower priority
-        
-        # Get recently missed questions
-        attempts_recent = load_attempts()
-        recently_missed = df.copy()
-        recently_missed['priority_group'] = 0  # Higher priority
-        
-        if not attempts_recent.empty:
-            attempts_recent['timestamp'] = pd.to_datetime(attempts_recent['timestamp'], format='mixed', errors='coerce')
-            recent_misses = attempts_recent[(attempts_recent['timestamp'] >= cutoff) & (attempts_recent['correct'] == False)]
-            missed_qids = set(recent_misses['QID'].unique())
-            recently_missed = recently_missed[recently_missed['QID'].isin(missed_qids)].copy()
-            # Sort recently missed by number of times missed (most missed first)
-            miss_counts = recent_misses.groupby('QID').size().to_dict()
-            recently_missed['miss_count'] = recently_missed['QID'].map(miss_counts)
-            recently_missed = recently_missed.sort_values('miss_count', ascending=False)
-        else:
-            recently_missed = pd.DataFrame(columns=untouched.columns)
-        
-        # Combine: recently missed first, then untouched
-        work = pd.concat([recently_missed, untouched], ignore_index=True)
-        return work
     
     # Default: apply focus filters if any
     if not focus_type:
@@ -1029,19 +998,214 @@ try:
             st.info("No attempts recorded yet. Switch to Study Mode and answer ~10–15 questions first.")
             st.stop()
 
-        # Overall
+        # Overall Progress
         st.subheader("✅ Overall Progress")
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5, gap="medium")
+        
+        # Calculate metrics
+        total_questions = stats["QID"].nunique()
+        questions_attempted = attempted["QID"].nunique()
+        unanswered = total_questions - questions_attempted
+        overall_acc = attempted["accuracy"].mean()
+        on_track = int((attempted["accuracy"] >= 0.80).sum())
+        risky = attempted[(attempted["Difficulty"].isin(["Medium", "Hard"])) & (attempted["accuracy"] < 0.6)]
+        risky_count = len(risky)
+        
         with c1:
-            st.metric("Questions Attempted", attempted["QID"].nunique())
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 12px;
+                padding: 24px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: white;
+            ">
+                <div style="font-size: 28px; margin-bottom: 8px;">📚</div>
+                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{questions_attempted}</div>
+                <div style="font-size: 14px; opacity: 0.9;">Questions Attempted</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with c2:
-            st.metric("Overall Accuracy", f"{attempted['accuracy'].mean():.1%}")
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                border-radius: 12px;
+                padding: 24px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: white;
+            ">
+                <div style="font-size: 28px; margin-bottom: 8px;">🎯</div>
+                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{overall_acc:.1%}</div>
+                <div style="font-size: 14px; opacity: 0.9;">Overall Accuracy</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with c3:
-            mastered_count = int(((attempted["accuracy"] >= 0.85) & (attempted["attempts"] >= 3)).sum())
-            st.metric("Mastered (≥85% & ≥3)", mastered_count)
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                border-radius: 12px;
+                padding: 24px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: white;
+            ">
+                <div style="font-size: 28px; margin-bottom: 8px;">✅</div>
+                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{on_track}</div>
+                <div style="font-size: 14px; opacity: 0.9;">On Track (≥80%)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
         with c4:
-            risky = attempted[(attempted["Difficulty"].isin(["Medium", "Hard"])) & (attempted["accuracy"] < 0.6)]
-            st.metric("High‑Risk (M/H & <60%)", len(risky))
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+                border-radius: 12px;
+                padding: 24px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: white;
+            ">
+                <div style="font-size: 28px; margin-bottom: 8px;">🚨</div>
+                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{risky_count}</div>
+                <div style="font-size: 14px; opacity: 0.9;">High-Risk (M/H & <60%)</div>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with c5:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+                border-radius: 12px;
+                padding: 24px;
+                text-align: center;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                color: #333;
+            ">
+                <div style="font-size: 28px; margin-bottom: 8px;">📭</div>
+                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{unanswered}</div>
+                <div style="font-size: 14px; opacity: 0.9;">Unanswered</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # =============================
+        # 🎯 EXAM READINESS (10-Day Sprint)
+        # =============================
+        st.subheader("🎯 Exam Readiness — 10-Day Sprint")
+        
+        # Calculate estimated test score
+        overall_accuracy = attempted["accuracy"].mean()
+        accuracy_pct = overall_accuracy * 100
+        goal_pct = 80
+        gap_pct = goal_pct - accuracy_pct
+        
+        # Display readiness cards
+        ex1, ex2 = st.columns(2)
+        with ex1:
+            if gap_pct <= 0:
+                st.metric("🎉 Estimated Score", f"{accuracy_pct:.1f}%", f"✅ Goal reached!")
+            else:
+                st.metric("📊 Estimated Score", f"{accuracy_pct:.1f}%", f"Need +{gap_pct:.1f}%")
+        with ex2:
+            st.metric("🎯 Goal", "80%")
+
+        # Topic-by-topic breakdown
+        st.subheader("📋 Topic Scorecard")
+        topic_scores = (
+            attempted.groupby("Topic")
+            .agg(
+                accuracy=("accuracy", "mean"),
+                questions=("QID", "count"),
+                exam_weight=("ExamWeight", "mean")
+            )
+            .reset_index()
+        )
+        topic_scores = topic_scores.sort_values("accuracy")
+        
+        # Calculate gap to 80% for each topic
+        topic_scores["gap_to_80"] = 80 - (topic_scores["accuracy"] * 100)
+        
+        # Create colored display
+        display_df = topic_scores.copy()
+        display_df["accuracy"] = display_df["accuracy"].apply(lambda x: f"{x:.1%}")
+        display_df["exam_weight"] = display_df["exam_weight"].apply(lambda x: f"{x:.0%}")
+        display_df["gap_to_80"] = topic_scores["gap_to_80"].apply(
+            lambda x: f"✅ Done" if x <= 0 else f"+{x:.1f}pts"
+        )
+        
+        st.dataframe(
+            display_df[["Topic", "accuracy", "questions", "exam_weight", "gap_to_80"]].rename(
+                columns={
+                    "Topic": "Topic",
+                    "accuracy": "Current Acc",
+                    "questions": "Q Count",
+                    "exam_weight": "Weight",
+                    "gap_to_80": "Path to 80%"
+                }
+            ),
+            width='stretch',
+            hide_index=True
+        )
+        
+        st.markdown("---")
+        
+        # Quick Wins
+        st.subheader("⚡ Quick Wins (75–79% → 80%)")
+        quick_wins = topic_scores[(topic_scores["accuracy"] >= 0.75) & (topic_scores["accuracy"] < 0.80)]
+        if not quick_wins.empty:
+            quick_wins = quick_wins.sort_values("questions", ascending=False)
+            qw_df = quick_wins.copy()
+            qw_df["accuracy"] = qw_df["accuracy"].apply(lambda x: f"{x:.1%}")
+            qw_df["gap_to_80"] = (80 - quick_wins["accuracy"] * 100).apply(lambda x: f"+{x:.1f}pts")
+            st.info(
+                f"🎯 {len(quick_wins)} topic(s) close to 80%! Small study boost = big score gain.\n\n"
+                + "Click 'Study Mode' and focus on these topics to cross the finish line."
+            )
+            st.dataframe(
+                qw_df[["Topic", "accuracy", "questions", "gap_to_80"]].rename(
+                    columns={"Topic": "Topic", "accuracy": "Current", "questions": "Q's", "gap_to_80": "Lift"}
+                ),
+                width='stretch',
+                hide_index=True
+            )
+        else:
+            st.success("✅ No quick wins needed — you're above 80% everywhere!")
+        
+        # Critical Gaps
+        st.subheader("🚨 Critical Gaps (<70% accuracy)")
+        critical = topic_scores[topic_scores["accuracy"] < 0.70]
+        if not critical.empty:
+            critical = critical.sort_values("exam_weight", ascending=False)
+            crit_df = critical.copy()
+            crit_df["accuracy"] = crit_df["accuracy"].apply(lambda x: f"{x:.1%}")
+            crit_df["exam_weight"] = crit_df["exam_weight"].apply(lambda x: f"{x:.0%}")
+            crit_df["potential_impact"] = (
+                (0.70 - critical["accuracy"]) * critical["exam_weight"] * 100
+            ).apply(lambda x: f"+{x:.1f}pts if fixed")
+            
+            st.warning(
+                f"⚠️ {len(critical)} topic(s) below 70%! These will drag your exam score.\n\n"
+                "**Priority: Study these topics first for maximum exam impact.**"
+            )
+            st.dataframe(
+                crit_df[["Topic", "accuracy", "exam_weight", "potential_impact"]].rename(
+                    columns={
+                        "Topic": "Topic",
+                        "accuracy": "Current",
+                        "exam_weight": "Weight",
+                        "potential_impact": "Potential Gain"
+                    }
+                ),
+                width='stretch',
+                hide_index=True
+            )
+        else:
+            st.success("✅ Great! No critical gaps — you're above 70% everywhere!")
 
         # Coverage Gaps
         st.subheader("🕳️ Topic Coverage Gaps")
@@ -1598,7 +1762,7 @@ try:
     if current_mode == "study":
         st.subheader("📚 Study Variant:")
         variant_row1 = st.columns(3)
-        variant_row2 = st.columns(3)
+        variant_row2 = st.columns(2)
         
         current_variant = st.session_state.get("study_variant", "normal")
         
@@ -1633,13 +1797,6 @@ try:
                 st.rerun()
         
         with variant_row2[1]:
-            variant_label = ("✓ " if current_variant == "review_needed" else "") + "🔧 Knowledge Gaps"
-            if st.button(variant_label, use_container_width=True, key="btn_variant_review_needed"):
-                st.session_state.study_variant = "review_needed"
-                st.session_state.session_key = None
-                st.rerun()
-        
-        with variant_row2[2]:
             variant_label = ("✓ " if current_variant == "deep_dive" else "") + "🎯 Topic Deep Dive"
             if st.button(variant_label, use_container_width=True, key="btn_variant_deep_dive"):
                 st.session_state.study_variant = "deep_dive"

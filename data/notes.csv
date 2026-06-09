@@ -106,7 +106,6 @@ So when you see an aggregation question: check the group-by column first, then v
 - and a timestamp/sequence that defines the order of changes
 - you need to apply those events to keep a target table current"
 1773,2026-04-27 11:26:30.168146,Parquet and JSON ---> NOT XML <---
-1827,2026-04-28 16:11:32.545475,USING org.apache.spark.sql.jdbc
 1830,2026-04-28 16:14:02.037117,"use ""def"" to define a function."
 1462,2026-05-06 16:51:39.013323,catalog.schema.table
 1253,2026-05-09 21:06:18.046290,"Think of it like envelopes — 
@@ -392,22 +391,6 @@ writeStream.table(""raw"") → wrong direction, Bronze writes TO bronze, not raw
 One line to remember:
 cloudFiles in → checkpoint out → bronze table
 If you don't see all three (readStream + cloudFiles + checkpointLocation) it's not Auto Loader."
-1897,2026-05-25 13:42:04.216071,"Memory hook — TBLPROPERTIES has two different syntaxes depending on context:
-CREATE TABLE (inline, no SET):
-CREATE TABLE inventory (id INT, units FLOAT)
-TBLPROPERTIES (business_owner = 'supply_chain')
-ALTER TABLE (after the fact, needs SET):
-ALTER TABLE inventory SET TBLPROPERTIES (business_owner = 'supply_chain')
-The trap: SET only belongs with ALTER TABLE, not CREATE TABLE.
-If you see CREATE TABLE + SET = wrong answer every time.
-Also remember VACUUM retention uses the same pattern:
-ALTER TABLE table_name SET TBLPROPERTIES (delta.deletedFileRetentionDuration = 'interval 365 days')
-Eliminate fast:
-
-CREATE TABLE ... SET TBLPROPERTIES → wrong (no SET on CREATE)
-CREATE TABLE ... SET (...) → wrong
-CREATE TABLE ... SET PROPERTY → wrong (not a real clause)
-CREATE TABLE ... TBLPROPERTIES (...) → correct"
 1010,2026-05-25 14:20:14.561210,"Both — and they do different things:
 
 RETURNS — declares the data type of the output (INT, STRING, DOUBLE, etc.)
@@ -665,34 +648,6 @@ Optimize table name, ZORDER column in parentheses.
 Personal note:
 
 I got the concept right but added SQL muscle memory: TABLE. For Databricks OPTIMIZE, remember the clean syntax: OPTIMIZE transactions ZORDER BY (transactionId)."
-1762,2026-05-29 15:52:50.136764,"Memory hook:
-
-File filtering happens in the path, not the WHERE.
-
-Correct idea:
-
-SELECT *
-FROM json.`/Volumes/commerce/landing/transactions/transactions_2023_*.json`
-Your answer E was tempting because LIKE 'transactions_2023_%' looks like filtering, but that filters rows after reading data. It does not tell Spark which files to read.
-
-Key distinction:
-
-Symbol	Used for	Example
-*	File path wildcard	transactions_2023_*.json
-%	SQL LIKE wildcard	WHERE name LIKE 'transactions_2023_%'
-Exam hook:
-
-Star before scan. Percent after scan.
-
-Meaning:
-
-* in the file path limits files Spark reads
-% in LIKE filters values after Spark has already read data
-Also, Spark SQL file path syntax should usually use backticks around the path:
-
-SELECT *
-FROM json.`/Volumes/commerce/landing/transactions/transactions_2023_*.json`
-Even if the answer choices omit backticks, answer A has the right concept: JSON format prefix + wildcard in the file path."
 1436,2026-05-29 15:59:36.012979,"Step-by-step:
 
 Start: x = 1, y = 2
@@ -768,13 +723,6 @@ FILTER(students, i -> i.total_courses < 3)
 TRANSFORM(students, i -> i.total_courses)
 FILTER returns fewer elements.
 TRANSFORM returns changed elements."
-1127,2026-05-29 16:22:30.228361,"Exam hook:
-
-USING chooses the source. OPTIONS supplies the connection.
-
-Or shorter:
-
-JDBC table? USING jdbc OPTIONS. Error if exists? leave out IF NOT EXISTS."
 1390,2026-05-29 17:02:53.243955,"Exam hook:
 
 No if, no else, no parentheses. Assert condition, message.
@@ -908,3 +856,99 @@ orderBy = the order runners cross the line (by date)
 rowsBetween = ""count everyone from the starting gun up to right now""
 
 All three required for a true cumulative sum. Missing any one = wrong answer."
+1112,2026-06-05 16:55:13.221041,"The core rule: Built-in notebook versioning = linear history only (like a simple changelog). Repos = full Git, meaning branches, merges, PRs, remote sync. Any question contrasting the two is almost certainly fishing for branching.
+Memory hook: Repos vs. notebook versioning → the answer is always branches. That's the one thing notebook history fundamentally cannot do."
+1336,2026-06-05 17:52:47.084591,"Auto Loader = Structured Streaming in a trench coat. It is just Structured Streaming underneath, with the cloudFiles source bolted on top to watch cloud storage. Layer / What it is: Structured Streaming = The engine | cloudFiles source = The cloud storage watcher | Auto Loader = Both together, packaged nicely. Any time a question asks ""what powers Auto Loader"" or ""what is Auto Loader built on"" the answer is always Structured Streaming. Delta Live Tables is a pipeline framework, DataFrames are batch, and Loader/Live DataFrames are not real things."
+1532,2026-06-06 16:48:13.285164,"The core concept you need locked in:
+In Databricks, ""unmanaged"" and ""external"" mean the same thing. You don't use the word UNMANAGED in the SQL. The way you tell Databricks it's external is simply by specifying a LOCATION. That's it.
+Memory hook: External table = just add LOCATION to a normal CREATE TABLE. No special keywords. No UNMANAGED, no AS. Just:
+sqlCREATE TABLE name USING DELTA LOCATION 'path'
+The question uses the word ""unmanaged"" to tempt you toward option D. Don't take the bait — that word never appears in actual DDL syntax."
+1127,2026-06-06 16:52:08.321416,"Memory hook: JDBC tables in Databricks SQL always use USING jdbc OPTIONS (...) — never jdbc() as a function. And the question asking ""throws error if exists"" = no IF NOT EXISTS clause. D is the trap because it looks complete but silently swallows the error.
+
+Exam hook:
+
+USING chooses the source. OPTIONS supplies the connection.
+
+Or shorter:
+
+JDBC table? USING jdbc OPTIONS. Error if exists? leave out IF NOT EXISTS."
+1387,2026-06-06 18:17:28.646149,"READ THE DAMN QUESTION IN SLOW MOTION
+
+Memory hook: ""Non-matching from both"" = FULL. Any time you see the word ""both"" describing the non-matching rows, it's FULL OUTER JOIN, not LEFT."
+1974,2026-06-06 18:20:41.106167,"Memory hook: Array of arrays across rows → array_distinct(flatten(array_agg())). Think outside-in: agg first, flatten second, distinct third."
+1154,2026-06-08 11:16:06.894038,"Memory hook: ""Bronze, Silver, Gold = Step 1, Step 2, Step 3"" — pure sequence, like a recipe."
+1904,2026-06-08 11:17:38.796360,"Memory hook: ""Many dependencies = Let Databricks manage the graph"" → Declarative Pipelines. Jobs task dependencies = you're the orchestrator. DLT = Databricks is the orchestrator."
+1905,2026-06-08 11:21:57.394604,"Memory hook: EXTENDED = everything the DBA cares about. Plain DESCRIBE = what a developer needs to write a query. EXTENDED = what you need to debug, audit, or manage the table.
+Exam tip: if a question involves finding a table's storage location, format, or properties — the answer involves DESCRIBE EXTENDED (or DESCRIBE DETAIL for Delta-specific file-level stats)."
+1762,2026-06-08 14:20:21.156993,"Memory hook:
+
+File filtering happens in the path, not the WHERE.
+
+Correct idea:
+
+SELECT *
+FROM json./Volumes/commerce/landing/transactions/transactions_2023_*.json
+Your answer E was tempting because LIKE 'transactions_2023_%' looks like filtering, but that filters rows after reading data. It does not tell Spark which files to read.
+
+Key distinction:
+
+Symbol Used for Example
+
+File path wildcard transactions_2023_*.json
+% SQL LIKE wildcard WHERE name LIKE 'transactions_2023_%'
+Exam hook:
+Star before scan. Percent after scan.
+
+Meaning:
+
+in the file path limits files Spark reads
+% in LIKE filters values after Spark has already read data
+Also, Spark SQL file path syntax should usually use backticks around the path:
+SELECT *
+FROM json./Volumes/commerce/landing/transactions/transactions_2023_*.json
+Even if the answer choices omit backticks, answer A has the right concept: JSON format prefix + wildcard in the file path.
+
+Memory hook: Glob * in the path = file-level filter before Spark reads anything. _metadata = after Spark opens the files. Use the glob when you can — it's cleaner and more efficient."
+1025,2026-06-08 14:25:11.077420,"Memory hook: ""Merge = marriage of old and new. Overwrite = divorce and remarry."" New column showing up = merge, not overwrite. And it has to be in both options because the source and target both need to agree."
+1326,2026-06-08 14:46:31.263571,"Memory hook: ""EXPLODE makes the array blow up into rows."" Any time you need to JOIN on an array column, you EXPLODE it first to get joinable individual values."
+1484,2026-06-08 15:50:16.589020,"Memory hook: ""DLT event log = Delta table at a path. You can't query a path, you query a view."" Two steps: CREATE TEMP VIEW → then SELECT."
+1897,2026-06-08 16:43:22.448376,"TBLPROPERTIES syntax depends on the command:
+
+CREATE TABLE — inline, NO SET:
+CREATE TABLE inventory (id INT, units FLOAT) TBLPROPERTIES (business_owner = 'supply_chain')
+
+ALTER TABLE — requires SET:
+ALTER TABLE inventory SET TBLPROPERTIES (business_owner = 'supply_chain')
+
+VACUUM retention uses the same ALTER TABLE + SET pattern:
+ALTER TABLE table_name SET TBLPROPERTIES (delta.deletedFileRetentionDuration = 'interval 365 days')
+
+Memory hook: ""CREATE = just do it. ALTER = SET it.""
+
+Eliminate fast:
+CREATE TABLE ... SET TBLPROPERTIES → wrong (no SET on CREATE)
+CREATE TABLE ... SET (...) → wrong
+CREATE TABLE ... SET PROPERTY → wrong (not a real clause)
+CREATE TABLE ... TBLPROPERTIES (...) → correct
+ALTER TABLE ... SET TBLPROPERTIES (...) → correct"
+1783,2026-06-08 16:48:26.810207,"Memory hook: ""warehouse is the house. All databases live in the warehouse.""
+
+dbfs:/user/hive/warehouse/hr_db.db"
+1827,2026-06-08 16:52:34.976438,"This one's tricky because jdbc feels like the right answer but it's actually the full class path that Spark requires:
+
+CREATE TABLE orders
+USING org.apache.spark.sql.jdbc
+OPTIONS (
+  url ""jdbc:sqlite:/bookstore.db"",
+  dbtable ""orders""
+)
+
+The distinction:
+
+USING jdbc — shorthand that works in DataFrame API (spark.read.format(""jdbc""))
+USING org.apache.spark.sql.jdbc — the fully qualified format required in Spark SQL DDL
+
+That said — flag this one. Earlier today we established that USING jdbc is valid Spark SQL syntax, and many Databricks docs use it that way. This may be another bad answer key question. If you see it on the exam, jdbc shorthand is widely accepted.
+
+Memory hook: ""SQL DDL wants the full name. DataFrame API accepts the nickname."" But honestly both show up in real Databricks code, so if the exam offers only one, pick whichever is available."
