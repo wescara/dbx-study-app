@@ -1025,7 +1025,8 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
-                min-height: 160px;
+                height: 180px;
+                display: flex; flex-direction: column; justify-content: center;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">📚</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{questions_attempted}</div>
@@ -1042,7 +1043,8 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
-                min-height: 160px;
+                height: 180px;
+                display: flex; flex-direction: column; justify-content: center;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">🎯</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{overall_acc:.1%}</div>
@@ -1059,7 +1061,8 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
-                min-height: 160px;
+                height: 180px;
+                display: flex; flex-direction: column; justify-content: center;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">✅</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{on_track}</div>
@@ -1076,7 +1079,8 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
-                min-height: 160px;
+                height: 180px;
+                display: flex; flex-direction: column; justify-content: center;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">🚨</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{risky_count}</div>
@@ -1111,7 +1115,8 @@ try:
                     text-align: center;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     color: #333;
-                    min-height: 160px;
+                    height: 180px;
+                    display: flex; flex-direction: column; justify-content: center;
                 ">
                     <div style="font-size: 28px; margin-bottom: 8px;">📭</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{unanswered}</div>
@@ -1127,7 +1132,8 @@ try:
                     text-align: center;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     color: white;
-                    min-height: 160px;
+                    height: 180px;
+                    display: flex; flex-direction: column; justify-content: center;
                 ">
                     <div style="font-size: 28px; margin-bottom: 8px;">📕</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{recent_misses_count}</div>
