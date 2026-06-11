@@ -932,9 +932,6 @@ CREATE TABLE ... SET (...) → wrong
 CREATE TABLE ... SET PROPERTY → wrong (not a real clause)
 CREATE TABLE ... TBLPROPERTIES (...) → correct
 ALTER TABLE ... SET TBLPROPERTIES (...) → correct"
-1783,2026-06-08 16:48:26.810207,"Memory hook: ""warehouse is the house. All databases live in the warehouse.""
-
-dbfs:/user/hive/warehouse/hr_db.db"
 1827,2026-06-08 16:52:34.976438,"This one's tricky because jdbc feels like the right answer but it's actually the full class path that Spark requires:
 
 CREATE TABLE orders
@@ -952,3 +949,30 @@ USING org.apache.spark.sql.jdbc — the fully qualified format required in Spark
 That said — flag this one. Earlier today we established that USING jdbc is valid Spark SQL syntax, and many Databricks docs use it that way. This may be another bad answer key question. If you see it on the exam, jdbc shorthand is widely accepted.
 
 Memory hook: ""SQL DDL wants the full name. DataFrame API accepts the nickname."" But honestly both show up in real Databricks code, so if the exam offers only one, pick whichever is available."
+1744,2026-06-09 06:59:08.932658,"(spark.readStream
+  .format(""delta"")
+  .load(""/mnt/silver_data"")
+  .groupBy(""device_id"")
+  .count()
+  .writeStream
+  .format(""delta"")
+  .option(""checkpointLocation"", ""/mnt/checkpoints/gold"")
+  .start(""/mnt/gold_data""))
+
+Why the others fail:
+
+A — reads from bronze, not silver
+B — reads silver as JSON format, but silver is a Delta table
+C — your pick — uses spark.read / write (batch), not streaming. Question specifically asks for a streaming query
+E — missing checkpointLocation and uses .save() instead of .start() — both wrong for streaming
+
+
+The two things that make D the only correct streaming answer:
+
+checkpointLocation is required for streaming writes — no checkpoint = invalid streaming query
+.start() not .save() — .save() is batch, .start() is streaming
+
+Memory hook: ""Streaming needs a checkpoint and a start. No checkpoint = no streaming."""
+1829,2026-06-10 14:58:07.543217,Need the .db at the end
+1783,2026-06-10 15:24:31.112501,Read the question more Carefully
+1792,2026-06-10 15:40:03.932121,Read more carefully.

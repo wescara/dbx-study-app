@@ -528,10 +528,10 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
         return df
     
     elif study_variant == "recent_misses":
-        # Questions answered incorrectly in the last 24 hours
+        # Questions answered incorrectly in the last 48 hours
         import pandas as pd
         now = pd.Timestamp.now()
-        cutoff = now - pd.Timedelta(hours=24)
+        cutoff = now - pd.Timedelta(hours=48)
         
         # Get all attempts data - need to load fresh to get latest
         attempts_recent = load_attempts()
@@ -1075,21 +1075,48 @@ try:
             </div>
             """, unsafe_allow_html=True)
         
+        # Calculate recent misses (48h)
+        _now_48 = pd.Timestamp.now()
+        _cutoff_48 = _now_48 - pd.Timedelta(hours=48)
+        _all_att = load_attempts()
+        if not _all_att.empty:
+            _all_att['timestamp'] = pd.to_datetime(_all_att['timestamp'], format='mixed', errors='coerce')
+            _recent_missed = _all_att[(_all_att['timestamp'] >= _cutoff_48) & (_all_att['correct'] == False)]
+            recent_misses_count = len(_recent_missed['QID'].unique())
+        else:
+            recent_misses_count = 0
+
         with c5:
-            st.markdown(f"""
-            <div style="
-                background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-                border-radius: 12px;
-                padding: 24px;
-                text-align: center;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                color: #333;
-            ">
-                <div style="font-size: 28px; margin-bottom: 8px;">📭</div>
-                <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{unanswered}</div>
-                <div style="font-size: 14px; opacity: 0.9;">Unanswered</div>
-            </div>
-            """, unsafe_allow_html=True)
+            if unanswered > 0:
+                st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+                    border-radius: 12px;
+                    padding: 24px;
+                    text-align: center;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    color: #333;
+                ">
+                    <div style="font-size: 28px; margin-bottom: 8px;">📭</div>
+                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{unanswered}</div>
+                    <div style="font-size: 14px; opacity: 0.9;">Unanswered</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+                    border-radius: 12px;
+                    padding: 24px;
+                    text-align: center;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    color: white;
+                ">
+                    <div style="font-size: 28px; margin-bottom: 8px;">📕</div>
+                    <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{recent_misses_count}</div>
+                    <div style="font-size: 14px; opacity: 0.9;">Recent Misses (48h)</div>
+                </div>
+                """, unsafe_allow_html=True)
 
         st.markdown("---")
 
