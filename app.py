@@ -1075,16 +1075,22 @@ try:
             </div>
             """, unsafe_allow_html=True)
         
-        # Calculate recent misses (48h)
+        # Calculate recent misses (48h) and how many redeemed today
         _now_48 = pd.Timestamp.now()
         _cutoff_48 = _now_48 - pd.Timedelta(hours=48)
+        _today_start = _now_48.normalize()
         _all_att = load_attempts()
         if not _all_att.empty:
             _all_att['timestamp'] = pd.to_datetime(_all_att['timestamp'], format='mixed', errors='coerce')
             _recent_missed = _all_att[(_all_att['timestamp'] >= _cutoff_48) & (_all_att['correct'] == False)]
-            recent_misses_count = len(_recent_missed['QID'].unique())
+            _missed_qids = set(_recent_missed['QID'].unique())
+            recent_misses_count = len(_missed_qids)
+            # Redeemed = missed in last 48h AND answered correctly today
+            _correct_today = _all_att[(_all_att['timestamp'] >= _today_start) & (_all_att['correct'] == True)]
+            redeemed_count = len(set(_correct_today['QID'].unique()) & _missed_qids)
         else:
             recent_misses_count = 0
+            redeemed_count = 0
 
         with c5:
             if unanswered > 0:
@@ -1115,6 +1121,7 @@ try:
                     <div style="font-size: 28px; margin-bottom: 8px;">📕</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{recent_misses_count}</div>
                     <div style="font-size: 14px; opacity: 0.9;">Recent Misses (48h)</div>
+                    <div style="font-size: 12px; opacity: 0.8; margin-top: 6px;">✅ {redeemed_count} redeemed today</div>
                 </div>
                 """, unsafe_allow_html=True)
 
