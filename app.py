@@ -528,10 +528,11 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
         return df
     
     elif study_variant == "recent_misses":
-        # Questions answered incorrectly in the last 48 hours
+        # Questions answered incorrectly in the last 48 hours, excluding ones redeemed today
         import pandas as pd
         now = pd.Timestamp.now()
         cutoff = now - pd.Timedelta(hours=48)
+        today_start = now.normalize()
         
         # Get all attempts data - need to load fresh to get latest
         attempts_recent = load_attempts()
@@ -539,7 +540,11 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
             attempts_recent['timestamp'] = pd.to_datetime(attempts_recent['timestamp'], format='mixed', errors='coerce')
             recent_misses = attempts_recent[(attempts_recent['timestamp'] >= cutoff) & (attempts_recent['correct'] == False)]
             missed_qids = set(recent_misses['QID'].unique())
-            work = df[df['QID'].isin(missed_qids)].copy()
+            # Remove QIDs answered correctly today (redeemed)
+            correct_today = attempts_recent[(attempts_recent['timestamp'] >= today_start) & (attempts_recent['correct'] == True)]
+            redeemed_qids = set(correct_today['QID'].unique()) & missed_qids
+            remaining_qids = missed_qids - redeemed_qids
+            work = df[df['QID'].isin(remaining_qids)].copy()
             # Sort by number of times missed (most missed first)
             miss_counts = recent_misses.groupby('QID').size().to_dict()
             work['miss_count'] = work['QID'].map(miss_counts)
@@ -1020,6 +1025,7 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
+                min-height: 160px;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">📚</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{questions_attempted}</div>
@@ -1036,6 +1042,7 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
+                min-height: 160px;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">🎯</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{overall_acc:.1%}</div>
@@ -1052,6 +1059,7 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
+                min-height: 160px;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">✅</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{on_track}</div>
@@ -1068,6 +1076,7 @@ try:
                 text-align: center;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 color: white;
+                min-height: 160px;
             ">
                 <div style="font-size: 28px; margin-bottom: 8px;">🚨</div>
                 <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{risky_count}</div>
@@ -1102,6 +1111,7 @@ try:
                     text-align: center;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     color: #333;
+                    min-height: 160px;
                 ">
                     <div style="font-size: 28px; margin-bottom: 8px;">📭</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{unanswered}</div>
@@ -1117,6 +1127,7 @@ try:
                     text-align: center;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     color: white;
+                    min-height: 160px;
                 ">
                     <div style="font-size: 28px; margin-bottom: 8px;">📕</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{recent_misses_count}</div>
