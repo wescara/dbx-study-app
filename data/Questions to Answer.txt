@@ -1,0 +1,47 @@
+Knack - Fix Folder Urls
+Deploy MEWS to STAGE and PROD
+Verify TPL
+Sprinklers
+Check on Parking Spot
+
+
+
+
+
+Yes. Based on your current data, you should start with the questions most likely to drop out of High-Risk after one correct attempt.
+
+Best first-pass order (fastest count reduction):
+
+2124	- Yes
+1112	- Yes
+1386	- No	- Missed
+1525	- Yes
+1974	- No	- Missed
+1365	- No	- Missed
+1155	- Yes
+2050	- Yes	- Bad question. updated answer
+2089	- Yes
+2085	- Yes
+
+High-impact picks to do right after (big exam value, also clear fast):
+
+1210	- Yes
+1016	- Yes
+1830	- Yes
+1838	- Yes
+1844	- No	- Missed
+
+Questions likely to need 2 corrects (don’t start with these if your goal is quick count drop):
+
+1484	- Yes
+1521	- No	- Missed
+1784	- Yes
+1744	- No
+
+How to run them with your rule:
+
+Do the top 10 in order.
+If correct: one reinforcement attempt, move on.
+If wrong: remediate quickly, then one more attempt max.
+Park anything still shaky and continue down the list.
+From your current set, about 87 of 106 high-risk questions are mathematically clearable with one correct, so this ordering should move the number down quickly.

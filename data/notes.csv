@@ -876,7 +876,6 @@ JDBC table? USING jdbc OPTIONS. Error if exists? leave out IF NOT EXISTS."
 1387,2026-06-06 18:17:28.646149,"READ THE DAMN QUESTION IN SLOW MOTION
 
 Memory hook: ""Non-matching from both"" = FULL. Any time you see the word ""both"" describing the non-matching rows, it's FULL OUTER JOIN, not LEFT."
-1974,2026-06-06 18:20:41.106167,"Memory hook: Array of arrays across rows → array_distinct(flatten(array_agg())). Think outside-in: agg first, flatten second, distinct third."
 1154,2026-06-08 11:16:06.894038,"Memory hook: ""Bronze, Silver, Gold = Step 1, Step 2, Step 3"" — pure sequence, like a recipe."
 1904,2026-06-08 11:17:38.796360,"Memory hook: ""Many dependencies = Let Databricks manage the graph"" → Declarative Pipelines. Jobs task dependencies = you're the orchestrator. DLT = Databricks is the orchestrator."
 1905,2026-06-08 11:21:57.394604,"Memory hook: EXTENDED = everything the DBA cares about. Plain DESCRIBE = what a developer needs to write a query. EXTENDED = what you need to debug, audit, or manage the table.
@@ -976,3 +975,54 @@ Memory hook: ""Streaming needs a checkpoint and a start. No checkpoint = no stre
 1829,2026-06-10 14:58:07.543217,Need the .db at the end
 1783,2026-06-10 15:24:31.112501,Read the question more Carefully
 1792,2026-06-10 15:40:03.932121,Read more carefully.
+1974,2026-06-11 09:43:18.388024,"Think of it like:
+
+""Stack → Smash → Deduplicate""
+
+
+array_agg = stack arrays
+flatten = smash them together
+array_distinct = remove duplicates
+
+
+Memory hook: Array of arrays across rows → array_distinct(flatten(array_agg())). Think outside-in: agg first, flatten second, distinct third."
+2040,2026-06-11 10:03:04.037422,"Memory Hook
+
+“Shrink first, count later”
+
+dropDuplicates = shrink data
+groupBy + count = cheap aggregation
+
+
+dau_df = (
+  orders_df
+    .select(""order_date"", ""customer_id"")
+    .dropDuplicates([""order_date"", ""customer_id""])
+    .groupBy(""order_date"")
+    .agg(F.count(""*"").alias(""dau""))
+)"
+1839,2026-06-11 10:08:17.988513,"🧠 Memory hooks (important for exam)
+🔹 Watermark
+
+⏱️ “How late can data arrive?”
+
+🔹 Checkpoint
+
+💾 “What have I already processed?”
+
+🔹 Auto Loader
+
+📂 “Checkpoint = tracks files”
+
+
+✅ One-liner to remember
+
+Auto Loader uses checkpointing to track ingestion progress—not watermarking."
+1857,2026-06-14 17:15:01.045149,"Memory hook: USAGE = the key to the building — you can get in and look around, but you still need separate keys for each room (SELECT, MODIFY, etc.)."
+2010,2026-06-14 17:16:39.071604,"Memory hook: Serverless jobs = set it and forget it PySpark — Databricks handles the infra, you just run the job."
+1661,2026-06-14 17:26:35.399216,"Memory hook: SQL Warehouse = Auto-STOP. Cluster = Auto-TERMINATE. Same idea, different name — match the term to the compute type."
+2009,2026-06-14 17:29:16.926012,"Memory hook: Schema + Checkpoint = both locations, both requirements. If a question mentions schema evolution and restart recovery, you need both options present."
+2011,2026-06-14 17:32:05.093900,"Memory hook: View = a window someone else cut in the wall. The owner cut it and can see through it — you just look through their window. You don't need keys to the room behind it.
+The trap was ""auto-masking"" — that's Dynamic Data Masking, which is a separate, explicit feature you configure. It doesn't happen automatically just because someone lacks table access."
+1479,2026-06-14 18:11:07.876129,"""Concurrency = scale OUT, slow queries = scale UP"""
+1682,2026-06-14 18:23:07.584046,"Memory hook: ""What file did this row come from?"" → input_file_name() — it's the only one that actually exists in Spark SQL."

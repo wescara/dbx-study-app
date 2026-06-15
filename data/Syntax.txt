@@ -1,0 +1,119 @@
+--------------------------------------------------------------------------------------------------
+Create External Table 	
+CREATE TABLE name USING DELTA LOCATION 'path'
+--------------------------------------------------------------------------------------------------
+This is the proper Databricks SQL syntax for creating an external table via JDBC:
+CREATE TABLE new_table
+USING jdbc
+OPTIONS (
+  url "jdbc:mysql://database.example.com:3306/mydb",
+  dbtable "new_table",
+  user "username",
+  password "password"
+)
+--------------------------------------------------------------------------------------------------
+Assert
+assert row_count > 0, “Row count should be more than 0“
+--------------------------------------------------------------------------------------------------
+Vaacum at 365 days
+ALTER TABLE table_name set TBLPROPERTIES (delta.deletedFileRetentionDuration= ‘interval 365 days’)
+--------------------------------------------------------------------------------------------------
+Array of Arrays across rows 
+array_distinct(flatten(array_agg()))
+--------------------------------------------------------------------------------------------------
+Grant Insert, Delete, Update to Table
+GRANT MODIFY ON TABLE inventory TO tom.hanks@organization.com
+--------------------------------------------------------------------------------------------------
+Create or Replace Table
+CREATE OR REPLACE TABLE students (
+id STRING,
+name STRING,
+dateOfBirth DATE,
+email STRING
+)
+--------------------------------------------------------------------------------------------------
+Change Owner of Table
+ALTER TABLE table_name OWNER to ‘group‘
+--------------------------------------------------------------------------------------------------
+Show Extended Table Properties
+DESCRIBE EXTENDED transactions
+--------------------------------------------------------------------------------------------------
+wildcards in a select statement
+SELECT * FROM json./Volumes/commerce/landing/transactions/transactions_2023_*.json
+--------------------------------------------------------------------------------------------------
+Merge and Overwrite Schema
+COPY INTO my_table FROM ‘/path/to/files‘ FILEFORMAT = CSV FORMAT_OPTIONS (‘mergeSchema‘ = ‘true‘) COPY_OPTIONS (‘overWriteSchema‘ = ‘true‘);
+--------------------------------------------------------------------------------------------------
+Optimize and ZORDER a Table
+OPTIMIZE transactions ZORDER BY (transactionId)
+--------------------------------------------------------------------------------------------------
+Restore Syntax
+RESTORE TABLE orders TO TIMESTAMP AS OF current_timestamp() - INTERVAL ‘8‘ HOURS;
+
+Query Event Log
+-- Step 1: create a temp view over the event log path
+CREATE OR REPLACE TEMP VIEW event_log
+USING DELTA LOCATION '/path/to/dlt/pipeline/system/events';
+
+-- Step 2: query it like any table
+SELECT * FROM event_log WHERE level = 'ERROR';
+--------------------------------------------------------------------------------------------------
+study new terms DLT --> | DAB
+--------------------------------------------------------------------------------------------------
+set table property
+CREATE TABLE inventory (id INT, units FLOAT) TBLPROPERTIES (business_owner = 'supply_chain')
+--------------------------------------------------------------------------------------------------
+CREATE TABLE — inline, no SET:
+CREATE TABLE inventory (id INT, units FLOAT) TBLPROPERTIES (business_owner = 'supply_chain')
+--------------------------------------------------------------------------------------------------
+ALTER TABLE — requires SET:
+ALTER TABLE inventory SET TBLPROPERTIES (business_owner = 'supply_chain')
+--------------------------------------------------------------------------------------------------
+Create Table from SQLite
+CREATE TABLE orders USING org.apache.spark.sql.jdbc OPTIONS (url "jdbc:sqlite:/bookstore.db",dbtable "orders")
+--------------------------------------------------------------------------------------------------
+Create Table with Comment
+CREATE TABLE payments COMMENT "This table contains sensitive information" AS SELECT * FROM bank_transactions
+--------------------------------------------------------------------------------------------------
+Date Syntax
+dd-MM-yyyy
+--------------------------------------------------------------------------------------------------
+spark load table into dataframe
+spark.table('silver.customers')
+--------------------------------------------------------------------------------------------------
+Create Global Temporary Table
+CREATE OR REPLACE GLOBAL TEMPORARY VIEW view_name AS SELECT * FROM table_name
+--------------------------------------------------------------------------------------------------
+Change Owner on Schema
+ALTER SCHEMA retail OWNER TO user@myteam.com
+--------------------------------------------------------------------------------------------------
+Create Views
+CREATE VIEW my_view AS SELECT ...   -- persistent, survives everything
+CREATE TEMP VIEW my_view AS ...     -- gone when session ends
+--------------------------------------------------------------------------------------------------
+Schema Details
+DESCRIBE SCHEMA EXTENDED schema_name
+--------------------------------------------------------------------------------------------------
+Which Structured Streaming trigger syntax schedules micro-batches every 15 minutes?
+trigger(processingTime='15 minutes')
+--------------------------------------------------------------------------------------------------
+Grant all priviledges on a Table
+GRANT ALL PRIVILEGES ON TABLE sales TO team
+--------------------------------------------------------------------------------------------------
+Create SQLite Table
+CREATE TABLE users 	USING JDBC OPTIONS ( url = “jdbc:sqlite:/${da.username}_ecommerce.db“, dbtable = “users“ )
+CREATE TABLE orders USING org.apache.spark.sql.jdbcOPTIONS (url "jdbc:sqlite:/bookstore.db",dbtable "orders")
+--------------------------------------------------------------------------------------------------
+array_agg collects the arrays across rows, flatten turns the array-of-arrays into one array, and array_distinct removes duplicate item IDs.
+array_distinct(flatten(array_agg(items)))
+--------------------------------------------------------------------------------------------------
+kafka load
+df = (spark.readStream.format("kafka").option("kafka.bootstrap.servers", host_port).option("subscribe",events_topic).option("startingOffsets", "latest").load())
+--------------------------------------------------------------------------------------------------
+python function to divide two numbers
+def multiply_numbers(num1, num2):return num1 * num2
+--------------------------------------------------------------------------------------------------
+Create Streaming Live Table
+CREATE STREAMING LIVE TABLE sales_silver AS
+SELECT store_id, total + tax AS total_after_tax
+FROM STREAM(LIVE.sales_bronze)

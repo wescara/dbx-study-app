@@ -528,10 +528,10 @@ def apply_focus_filters(df: pd.DataFrame) -> pd.DataFrame:
         return df
     
     elif study_variant == "recent_misses":
-        # Questions answered incorrectly in the last 48 hours, excluding ones redeemed today
+        # Questions answered incorrectly in the last 7 days, excluding ones redeemed today
         import pandas as pd
         now = pd.Timestamp.now()
-        cutoff = now - pd.Timedelta(hours=48)
+        cutoff = now - pd.Timedelta(days=7)
         today_start = now.normalize()
         
         # Get all attempts data - need to load fresh to get latest
@@ -1088,9 +1088,9 @@ try:
             </div>
             """, unsafe_allow_html=True)
         
-        # Calculate recent misses (48h) and how many redeemed today
+        # Calculate recent misses (7d) and how many redeemed today
         _now_48 = pd.Timestamp.now()
-        _cutoff_48 = _now_48 - pd.Timedelta(hours=48)
+        _cutoff_48 = _now_48 - pd.Timedelta(days=7)
         _today_start = _now_48.normalize()
         _all_att = load_attempts()
         if not _all_att.empty:
@@ -1098,7 +1098,7 @@ try:
             _recent_missed = _all_att[(_all_att['timestamp'] >= _cutoff_48) & (_all_att['correct'] == False)]
             _missed_qids = set(_recent_missed['QID'].unique())
             recent_misses_count = len(_missed_qids)
-            # Redeemed = missed in last 48h AND answered correctly today
+            # Redeemed = missed in last 7d AND answered correctly today
             _correct_today = _all_att[(_all_att['timestamp'] >= _today_start) & (_all_att['correct'] == True)]
             redeemed_count = len(set(_correct_today['QID'].unique()) & _missed_qids)
         else:
@@ -1137,7 +1137,7 @@ try:
                 ">
                     <div style="font-size: 28px; margin-bottom: 8px;">📕</div>
                     <div style="font-size: 32px; font-weight: bold; margin-bottom: 4px;">{recent_misses_count}</div>
-                    <div style="font-size: 14px; opacity: 0.9;">Recent Misses (48h)</div>
+                    <div style="font-size: 14px; opacity: 0.9;">Recent Misses (7d)</div>
                     <div style="font-size: 12px; opacity: 0.8; margin-top: 6px;">✅ {redeemed_count} redeemed today</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2514,7 +2514,8 @@ try:
                 st.info(f"ℹ️ **This question has {len(correct_letters)} correct answers:** {', '.join(correct_letters)}")
 
             st.markdown("### Explanation")
-            st.markdown(rv.get("explanation", "").replace("\n", "  \n"))
+            _expl = rv.get("explanation", "")
+            st.markdown(str(_expl).replace("\n", "  \n") if pd.notna(_expl) else "")
 
             ver_notes = rv.get("verification_notes")
             if pd.notna(ver_notes):
