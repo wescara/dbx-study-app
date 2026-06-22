@@ -1026,3 +1026,22 @@ Auto Loader uses checkpointing to track ingestion progress—not watermarking."
 The trap was ""auto-masking"" — that's Dynamic Data Masking, which is a separate, explicit feature you configure. It doesn't happen automatically just because someone lacks table access."
 1479,2026-06-14 18:11:07.876129,"""Concurrency = scale OUT, slow queries = scale UP"""
 1682,2026-06-14 18:23:07.584046,"Memory hook: ""What file did this row come from?"" → input_file_name() — it's the only one that actually exists in Spark SQL."
+1964,2026-06-15 15:00:17.115328,"COMMENT ON TABLE table_name IS 'your comment here';
+Memory hook: COMMENT ON ... IS ... — reads like plain English. ""Comment on this table, it is: ..."""
+1912,2026-06-15 15:02:47.496431,"sql
+SELECT raw_json:customer.name, 
+       raw_json:order.total
+FROM orders;
+Where raw_json is a string column containing JSON like:
+json
+{""customer"": {""name"": ""Chuck""}, ""order"": {""total"": 99.99}}
+
+The : gets you into the JSON, then . navigates nested fields after that.
+
+Memory hook: Colon starts it, dot navigates it. column:field.subfield"
+1811,2026-06-15 15:04:53.452038,"The question tells you everything you need:
+
+""updates at defined intervals until manually stopped"" = Continuous mode
+""compute resources terminate when pipeline is stopped"" = Production mode (Development mode keeps cluster alive for faster iteration)
+
+Memory hook: Continuous = runs until YOU stop it. Triggered = runs once and stops itself."

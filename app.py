@@ -420,19 +420,23 @@ def add_performance(questions: pd.DataFrame, attempts: pd.DataFrame) -> pd.DataF
         return q
 
     att = attempts.copy()
-    # Time-decay: half-life of 14 days — recent attempts count more
-    now = pd.Timestamp.now()
-    att["days_ago"] = (now - att["timestamp"]).dt.total_seconds() / 86400
-    att["weight"] = 0.5 ** (att["days_ago"] / 14)
-    att["weighted_correct"] = att["correct"].astype(float) * att["weight"]
+    # Sequential decay: most recent attempt has highest weight (0.5^0),
+    # second-most-recent has 0.5^1, etc. Independent of calendar time.
+    att = att.sort_values("timestamp")
+
+    def _seq_accuracy(group):
+        n = len(group)
+        weights = [0.5 ** i for i in range(n - 1, -1, -1)]
+        correct = group["correct"].values
+        return sum(w * c for w, c in zip(weights, correct)) / sum(weights)
+
+    seq_acc = att.groupby("QID").apply(_seq_accuracy).rename("accuracy")
 
     agg = att.groupby("QID").agg(
         attempts=("correct", "count"),
         correct_total=("correct", "sum"),
-        weighted_correct=("weighted_correct", "sum"),
-        weighted_total=("weight", "sum"),
     ).reset_index()
-    agg["accuracy"] = agg["weighted_correct"] / agg["weighted_total"]
+    agg = agg.merge(seq_acc, on="QID", how="left")
 
     out = q.merge(agg, on="QID", how="left")
     return out.fillna({"attempts": 0, "correct_total": 0, "accuracy": 0.0})
@@ -892,15 +896,19 @@ st.set_page_config(page_title="Databricks Associate Engineer Study App", layout=
 st.title("Databricks Associate Engineer Study App")
 
 # Calculate days until exam
-exam_date = pd.Timestamp("2026-06-17")
-today = pd.Timestamp.now()
+exam_date = pd.Timestamp("2026-06-17").normalize()
+today = pd.Timestamp.now().normalize()
 days_until_exam = (exam_date - today).days
 
 # Display exam countdown in sidebar with visual emphasis (green success style)
-if days_until_exam > 0:
+if days_until_exam > 1:
     st.sidebar.markdown(f"<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.2); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 14px; color: #999;'>📌 EXAM: JUNE 17</p><p style='margin: 10px 0 0 0; font-size: 36px; font-weight: bold; color: #00C864;'>{days_until_exam}</p><p style='margin: 5px 0 0 0; font-size: 12px; color: #999;'>days left</p></div>", unsafe_allow_html=True)
+elif days_until_exam == 1:
+    st.sidebar.markdown("<div style='text-align: center; padding: 20px; background-color: rgba(255, 165, 0, 0.2); border-radius: 10px; border: 2px solid #FFA500;'><p style='margin: 0; font-size: 14px; color: #999;'>📌 EXAM: JUNE 17</p><p style='margin: 10px 0 0 0; font-size: 36px; font-weight: bold; color: #FFA500;'>1</p><p style='margin: 5px 0 0 0; font-size: 12px; color: #999;'>day left</p></div>", unsafe_allow_html=True)
+elif days_until_exam == 0:
+    st.sidebar.markdown("<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.15); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 40px;'>🏆</p><p style='margin: 10px 0 0 0; font-size: 20px; font-weight: bold; color: #00C864;'>EXAM DAY!</p><p style='margin: 10px 0 0 0; font-size: 14px; color: #ccc;'>You put in the work.</p><p style='margin: 5px 0 0 0; font-size: 14px; color: #ccc;'>You know this material.</p><p style='margin: 5px 0 0 0; font-size: 16px; font-weight: bold; color: #00C864;'>Go crush it! 💪</p></div>", unsafe_allow_html=True)
 else:
-    st.sidebar.warning("⚠️ Exam is today or past!")
+    st.sidebar.markdown("<div style='text-align: center; padding: 20px; background-color: rgba(0, 200, 100, 0.15); border-radius: 10px; border: 2px solid #00C864;'><p style='margin: 0; font-size: 40px;'>🎉</p><p style='margin: 10px 0 0 0; font-size: 20px; font-weight: bold; color: #00C864;'>Exam Complete!</p><p style='margin: 10px 0 0 0; font-size: 14px; color: #ccc;'>Hope it went great!</p></div>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 # Load data early to display today's progress at top of sidebar
@@ -963,9 +971,9 @@ try:
     if confirmed_only and "VerificationStatus" in stats.columns:
         stats = stats[stats["VerificationStatus"] == "Confirmed"].copy()
 
-    # Mastery filter
+    # Mastery filter (skip for recent_misses variant — those need to be reattempted)
     stats["mastered"] = (stats["accuracy"] >= 0.85) & (stats["attempts"] >= 3)
-    if hide_mastered:
+    if hide_mastered and st.session_state.get("study_variant") != "recent_misses":
         stats = stats[~stats["mastered"] | (stats["FlagForReview"].fillna(0) == 1)].copy()
 
     # Priority
